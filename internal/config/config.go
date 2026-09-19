@@ -159,7 +159,9 @@ func pathError(path string, err error) error {
 
 // read returns the contents of the configuration file.
 func read(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	// The path is the configuration file the caller asked for, so opening a
+	// variable path is the purpose of this function rather than a risk.
+	file, err := os.Open(path) //nolint:gosec // The path is a deliberate caller input.
 	if err != nil {
 		return nil, pathError(path, err)
 	}
@@ -321,6 +323,8 @@ func describe(node *yaml.Node) string {
 		return "a mapping"
 	case yaml.SequenceNode:
 		return "a list"
+	default:
+		// Every other kind carries a scalar value, which the tag names below.
 	}
 
 	switch node.ShortTag() {

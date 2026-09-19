@@ -1,0 +1,162 @@
+# golangci-lint configuration.
+#
+# Every check is opt-in: the default linter set is disabled so that an enabled
+# linter is always a deliberate choice, and upgrading golangci-lint never adds
+# a check without this file changing.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # Correctness. These are golangci-lint's own defaults, listed explicitly
+    # because "default: none" also switches them off.
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    # Error handling. The gate reports why it refused to decide, so an error
+    # that is dropped, unwrapped, or mistyped is a defect in the product, not
+    # only in the code.
+    - errorlint
+    - errname
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - errchkjson
+
+    # Bug-prone constructs.
+    - asasalint
+    - bidichk
+    - copyloopvar
+    - durationcheck
+    - exhaustive
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gosec
+    - makezero
+    - musttag
+    - reassign
+    - recvcheck
+    - wastedassign
+
+    # Context and HTTP. The Jev client is the one outbound dependency: a
+    # request without a context, or a response body left open, is a hang.
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - fatcontext
+    - noctx
+
+    # Style and clarity, kept to rules this codebase already follows.
+    - dogsled
+    - dupword
+    - exptostd
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - godot
+    - goprintffuncname
+    - inamedparam
+    - intrange
+    - mirror
+    - misspell
+    - modernize
+    - nakedret
+    - nosprintfhostport
+    - perfsprint
+    - predeclared
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - whitespace
+
+    # Tests.
+    - thelper
+    - usetesting
+
+    # Suppressions must explain themselves.
+    - nolintlint
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    exhaustive:
+      # A switch that ends in a default has stated what it does with the rest.
+      default-signifies-exhaustive: true
+
+    goconst:
+      min-occurrences: 3
+      ignore-tests: true
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+
+    godot:
+      # Declaration comments are the documentation; inline comments are not.
+      scope: declarations
+
+    govet:
+      enable-all: true
+      disable:
+        # Field order is a readability decision here, not a memory budget.
+        - fieldalignment
+
+    misspell:
+      locale: US
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # Test helpers assert on data they built themselves; requiring the
+      # security and duplication checks there hides no real risk.
+      - path: _test\.go
+        linters:
+          - gosec
+
+# Formatting is checked, never silently rewritten in CI.
+formatters:
+  enable:
+    - gofmt
+    - goimports

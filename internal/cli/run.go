@@ -66,7 +66,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 // run carries the implementation of Run. Later tasks widen it with the config
 // loader, git, and Jev dependencies so that the exported signature stays
 // narrow and the dependencies remain replaceable in tests.
-func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int { //nolint:revive,unparam // ctx is used once Jev is wired up.
 	switch {
 	case hasFlag(args, "-h", "--help"):
 		fmt.Fprint(stdout, helpText)
