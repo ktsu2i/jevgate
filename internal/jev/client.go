@@ -72,7 +72,7 @@ func (c *Client) Assess(ctx context.Context, diff git.Diff, repoContext string) 
 	if err != nil {
 		return Assessment{}, err
 	}
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		assessment, status, after, err := c.attempt(ctx, data)
 		if ctx.Err() != nil {
 			return Assessment{}, failure(status, "assessment interrupted", ctx.Err())
@@ -94,11 +94,11 @@ func (c *Client) Assess(ctx context.Context, diff git.Diff, repoContext string) 
 	panic("unreachable: bounded attempt loop always returns")
 }
 
-func (c *Client) attempt(ctx context.Context, data []byte) (Assessment, int, string, error) {
+func (c *Client) attempt(ctx context.Context, data []byte) (assessment Assessment, status int, retryAfterHeader string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return Assessment{}, 0, "", failure(0, "request interrupted", err)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return Assessment{}, 0, "", failure(0, "request interrupted", contextErr)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(data))
 	if err != nil {
@@ -113,7 +113,7 @@ func (c *Client) attempt(ctx context.Context, data []byte) (Assessment, int, str
 		return Assessment{}, 0, "", communicationFailure(ctx, 0, "transport error", err)
 	}
 	defer resp.Body.Close()
-	status := resp.StatusCode
+	status = resp.StatusCode
 	if status < 200 || status >= 300 {
 		// Error bodies can echo the complete input. Do not read or print them.
 		return Assessment{}, status, resp.Header.Get("Retry-After"), failure(status, statusCategory(status), nil)
@@ -122,13 +122,13 @@ func (c *Client) attempt(ctx context.Context, data []byte) (Assessment, int, str
 	if err != nil {
 		return Assessment{}, status, "", communicationFailure(ctx, status, "response read error", err)
 	}
-	if err := ctx.Err(); err != nil {
-		return Assessment{}, status, "", failure(status, "request interrupted", err)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return Assessment{}, status, "", failure(status, "request interrupted", contextErr)
 	}
 	if len(data) > maxResponseBytes {
 		return Assessment{}, status, "", failure(status, "response exceeds 1 MiB", nil)
 	}
-	assessment, err := decodeAssessment(data)
+	assessment, err = decodeAssessment(data)
 	if err != nil {
 		return Assessment{}, status, "", failure(status, "invalid response: "+err.Error(), nil)
 	}

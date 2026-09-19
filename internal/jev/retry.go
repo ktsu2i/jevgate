@@ -28,7 +28,9 @@ func retryable(status int) bool {
 // retries while retaining the 0.5s, 1s exponential minimum delays.
 func retryDelay(attempt int, header string, now time.Time) time.Duration {
 	backoff := baseBackoff << attempt
-	delay := backoff + time.Duration(rand.Int64N(int64(backoff/2)))
+	// This jitter spreads retry load; it does not generate a secret or make a
+	// security decision, so a cryptographic random source is unnecessary.
+	delay := backoff + time.Duration(rand.Int64N(int64(backoff/2))) //nolint:gosec // Retry jitter is not security-sensitive randomness.
 	if after := retryAfter(header, now); after > delay {
 		delay = after
 	}

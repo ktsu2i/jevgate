@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -104,18 +105,18 @@ func TestAssessResponses(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var calls atomic.Int32
-			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				calls.Add(1)
 				fmt.Fprint(w, tt.body)
 			})
 			got, err := client.Assess(context.Background(), testDiff(), "context-sentinel")
 			if tt.ok {
 				require.NoError(t, err)
-				assert.Equal(t, tt.want, got.AIApprovalAllowedProbability)
+				assert.InDelta(t, tt.want, got.AIApprovalAllowedProbability, 0)
 			} else {
 				require.Error(t, err)
 				assert.Equal(t, Assessment{}, got)
-				assert.ErrorContains(t, err, "HTTP 200")
+				require.ErrorContains(t, err, "HTTP 200")
 				assertSafeError(t, err)
 			}
 			assert.EqualValues(t, 1, calls.Load())
@@ -143,7 +144,7 @@ func TestAssessRetryStatuses(t *testing.T) {
 					w.WriteHeader(status)
 					fmt.Fprint(w, "secret-key-sentinel diff-sentinel context-sentinel")
 				})
-				client.wait = func(ctx context.Context, delay time.Duration) error {
+				client.wait = func(_ context.Context, delay time.Duration) error {
 					delays = append(delays, delay)
 					return nil
 				}
@@ -158,10 +159,10 @@ func TestAssessRetryStatuses(t *testing.T) {
 				}
 				if canRetry && recover {
 					require.NoError(t, err)
-					assert.Equal(t, 1.0, got.AIApprovalAllowedProbability)
+					assert.InDelta(t, 1.0, got.AIApprovalAllowedProbability, 0)
 				} else {
 					require.Error(t, err)
-					assert.ErrorContains(t, err, fmt.Sprintf("HTTP %d", status))
+					require.ErrorContains(t, err, fmt.Sprintf("HTTP %d", status))
 					assertSafeError(t, err)
 					assert.Equal(t, Assessment{}, got)
 				}
@@ -183,16 +184,16 @@ func TestAssessRetryAfter(t *testing.T) {
 		t.Run(header, func(t *testing.T) {
 			t.Parallel()
 			var calls atomic.Int32
-			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				if calls.Add(1) == 1 {
 					w.Header().Set("Retry-After", header)
-					w.WriteHeader(429)
+					w.WriteHeader(http.StatusTooManyRequests)
 					return
 				}
 				fmt.Fprint(w, `{"answers":{"ai_approval_allowed":{"type":"noul","noul":0}}}`)
 			})
 			var waited time.Duration
-			client.wait = func(ctx context.Context, delay time.Duration) error {
+			client.wait = func(_ context.Context, delay time.Duration) error {
 				waited = delay
 				return nil
 			}
@@ -210,7 +211,7 @@ func TestAssessRetryBeyondDeadline(t *testing.T) {
 		t.Run(header, func(t *testing.T) {
 			t.Parallel()
 			var calls atomic.Int32
-			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				calls.Add(1)
 				w.Header().Set("Retry-After", header)
 				w.WriteHeader(529)
@@ -221,7 +222,7 @@ func TestAssessRetryBeyondDeadline(t *testing.T) {
 			}
 			_, err := client.Assess(context.Background(), testDiff(), "")
 			require.ErrorIs(t, err, context.DeadlineExceeded)
-			assert.ErrorContains(t, err, "HTTP 529")
+			require.ErrorContains(t, err, "HTTP 529")
 			assert.EqualValues(t, 1, calls.Load())
 		})
 	}
@@ -232,9 +233,9 @@ func TestAssessCancellationDuringWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var calls atomic.Int32
-	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
-		w.WriteHeader(429)
+		w.WriteHeader(http.StatusTooManyRequests)
 	})
 	waiting := make(chan struct{})
 	client.wait = func(ctx context.Context, delay time.Duration) error {
@@ -270,10 +271,15 @@ func TestAssessTimeouts(t *testing.T) {
 				var calls atomic.Int32
 				client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 					calls.Add(1)
-					io.Copy(io.Discard, r.Body)
+					_, err := io.Copy(io.Discard, r.Body)
+					assert.NoError(t, err)
 					if phase == "body" {
 						fmt.Fprint(w, `{"answers":`)
-						w.(http.Flusher).Flush()
+						flusher, ok := w.(http.Flusher)
+						assert.True(t, ok)
+						if ok {
+							flusher.Flush()
+						}
 					}
 					<-r.Context().Done()
 				})
@@ -301,7 +307,7 @@ func TestAssessTimeouts(t *testing.T) {
 func TestAssessRejectsRedirects(t *testing.T) {
 	t.Parallel()
 	for _, status := range []int{301, 302, 303, 307, 308} {
-		t.Run(fmt.Sprint(status), func(t *testing.T) {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			t.Parallel()
 			var calls atomic.Int32
 			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -323,7 +329,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 func TestAssessTransportError(t *testing.T) {
 	t.Parallel()
 	calls := 0
-	client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		calls++
 		return nil, errors.New("secret-key-sentinel diff-sentinel context-sentinel")
 	})})
@@ -341,9 +347,9 @@ func TestAssessmentDeadlinePersistsAcrossAttempts(t *testing.T) {
 		assert.True(t, ok)
 		deadlines = append(deadlines, deadline)
 		if len(deadlines) == 1 {
-			return &http.Response{StatusCode: 503, Body: http.NoBody, Header: make(http.Header)}, nil
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: http.NoBody, Header: make(http.Header)}, nil
 		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"answers":{"ai_approval_allowed":{"type":"noul","noul":1}}}`))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"answers":{"ai_approval_allowed":{"type":"noul","noul":1}}}`))}, nil
 	})})
 	client.assessmentTimeout = 2 * time.Second
 	client.wait = func(ctx context.Context, _ time.Duration) error {
@@ -374,7 +380,7 @@ func TestResponseReadIsBounded(t *testing.T) {
 	t.Parallel()
 	body := &endlessBody{}
 	client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Body: body}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 	})})
 	_, err := client.Assess(context.Background(), testDiff(), "")
 	require.ErrorContains(t, err, "response exceeds 1 MiB")
@@ -392,10 +398,10 @@ func (b *trackedBody) Close() error { b.closed = true; return nil }
 func TestAssessClosesBodies(t *testing.T) {
 	t.Parallel()
 	for _, status := range []int{200, 401, 503} {
-		t.Run(fmt.Sprint(status), func(t *testing.T) {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			t.Parallel()
 			var bodies []*trackedBody
-			client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 				for _, body := range bodies {
 					assert.True(t, body.closed, "previous attempt must close before retrying")
 				}
@@ -416,7 +422,7 @@ func TestAssessClosesBodies(t *testing.T) {
 func TestAssessTruncatedHTTPBody(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int32
-	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+	client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Content-Length", "1000")
 		fmt.Fprint(w, `{"answers":{"ai_approval_allowed":{"type":"noul","noul":1}}}`)
