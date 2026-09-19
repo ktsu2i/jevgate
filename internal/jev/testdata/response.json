@@ -1,0 +1,7 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "ai_approval_allowed": { "type": "noul", "noul": 0.972 }
+  },
+  "usage": { "input_tokens": 512, "output_tokens": 16 }
+}
