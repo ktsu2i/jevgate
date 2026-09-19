@@ -74,7 +74,10 @@ linters:
     - usestdlibvars
     - whitespace
 
-    # Tests.
+    # Tests. The tests assert through testify, so the way testify is called
+    # is worth checking: its assertions report a pass when they are given the
+    # wrong argument order or the wrong function for the type.
+    - testifylint
     - thelper
     - usetesting
 
@@ -117,6 +120,35 @@ linters:
       require-explanation: true
       require-specific: true
       allow-unused: false
+
+    testifylint:
+      # Every checker, named rather than switched on in bulk, so that a new
+      # release adds a check only when this list changes.
+      enable:
+        - blank-import
+        - bool-compare
+        - compares
+        - contains
+        - empty
+        - encoded-compare
+        - error-is-as
+        - error-nil
+        - expected-actual
+        - float-compare
+        - formatter
+        - go-require
+        - len
+        - negative-positive
+        - nil-compare
+        - regexp
+        - require-error
+        - suite-broken-parallel
+        - suite-dont-use-pkg
+        - suite-extra-assert-call
+        - suite-method-signature
+        - suite-subtest-run
+        - suite-thelper
+        - useless-assert
 
     revive:
       rules:

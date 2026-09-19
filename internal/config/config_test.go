@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // repoWith creates a repository root containing the given .jevgate.yml, or no
@@ -23,9 +26,7 @@ func repoWith(t *testing.T, content ...string) string {
 func write(t *testing.T, path, content string) {
 	t.Helper()
 
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("writing %s: %v", path, err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600), "writing %s", path)
 }
 
 func TestLoadFile(t *testing.T) {
@@ -92,12 +93,8 @@ func TestLoadFile(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := Load(Params{RepoRoot: repoWith(t, test.content)})
-			if err != nil {
-				t.Fatalf("Load returned %v, want %+v", err, test.want)
-			}
-			if got != test.want {
-				t.Errorf("Load = %+v, want %+v", got, test.want)
-			}
+			require.NoError(t, err, "Load, want %+v", test.want)
+			assert.Equal(t, test.want, got)
 		})
 	}
 }
@@ -233,21 +230,14 @@ func TestLoadRejectsInvalidFile(t *testing.T) {
 			root := repoWith(t, test.content)
 
 			got, err := Load(Params{RepoRoot: root})
-			if err == nil {
-				t.Fatalf("Load = %+v, want an error", got)
-			}
-			if !strings.Contains(err.Error(), test.want) {
-				t.Errorf("Load error = %q, want it to mention %q", err, test.want)
-			}
-			if !strings.Contains(err.Error(), filepath.Join(root, FileName)) {
-				t.Errorf("Load error = %q, want it to name the configuration file", err)
-			}
+			require.Error(t, err, "Load = %+v, want an error", got)
+			require.ErrorContains(t, err, test.want)
+			require.ErrorContains(t, err, filepath.Join(root, FileName), "the error must name the configuration file")
 
 			// The command line must not paper over a broken file: the
 			// repository is misconfigured either way.
-			if _, err := Load(Params{RepoRoot: root, Threshold: 0.99, ThresholdSet: true}); err == nil {
-				t.Errorf("Load with --threshold accepted an invalid configuration file")
-			}
+			_, err = Load(Params{RepoRoot: root, Threshold: 0.99, ThresholdSet: true})
+			assert.Error(t, err, "Load with --threshold accepted an invalid configuration file")
 		})
 	}
 }
@@ -319,12 +309,8 @@ func TestLoadPrecedence(t *testing.T) {
 				Threshold:    test.threshold,
 				ThresholdSet: test.thresholdSet,
 			})
-			if err != nil {
-				t.Fatalf("Load returned %v", err)
-			}
-			if got.Threshold != test.want {
-				t.Errorf("Load threshold = %v, want %v", got.Threshold, test.want)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, Config{Threshold: test.want}, got)
 		})
 	}
 }
@@ -334,55 +320,41 @@ func TestLoadRejectsInvalidOverride(t *testing.T) {
 	// that can keep an unusable threshold out of the comparison.
 	for _, threshold := range []float64{-0.1, 1.1, math.NaN(), math.Inf(1), math.Inf(-1)} {
 		got, err := Load(Params{RepoRoot: repoWith(t), Threshold: threshold, ThresholdSet: true})
-		if err == nil {
-			t.Errorf("Load with --threshold %v = %+v, want an error", threshold, got)
-		}
+		assert.Error(t, err, "Load with --threshold %v = %+v, want an error", threshold, got)
 	}
 }
 
 func TestLoadDiscoversOnlyTheRepositoryRoot(t *testing.T) {
 	root := repoWith(t, "threshold: 0.8\ncontext: root configuration\n")
 	sub := filepath.Join(root, "internal", "cli")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatalf("creating %s: %v", sub, err)
-	}
+	require.NoError(t, os.MkdirAll(sub, 0o755), "creating %s", sub)
 	// A configuration next to the working directory is not a repository
 	// configuration and must be ignored.
 	write(t, filepath.Join(sub, FileName), "threshold: 0.1\n")
 
 	got, err := Load(Params{RepoRoot: root, Cwd: sub})
-	if err != nil {
-		t.Fatalf("Load returned %v", err)
-	}
-	want := Config{Threshold: 0.8, Context: "root configuration"}
-	if got != want {
-		t.Errorf("Load from a subdirectory = %+v, want %+v", got, want)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, Config{Threshold: 0.8, Context: "root configuration"}, got, "Load from a subdirectory")
 }
 
 func TestLoadRelativePathWithoutAWorkingDirectory(t *testing.T) {
 	// A relative --config has no meaning without the directory it came from,
 	// and guessing one could read a different repository's configuration.
 	got, err := Load(Params{RepoRoot: repoWith(t), Path: "custom.yml"})
-	if err == nil {
-		t.Errorf("Load of a relative path without a working directory = %+v, want an error", got)
-	}
+	assert.Error(t, err, "Load of a relative path without a working directory = %+v, want an error", got)
 }
 
 func TestLoadWithoutARepositoryRoot(t *testing.T) {
 	// Discovery has nowhere to look, which is a caller mistake rather than a
 	// repository without a configuration.
-	if got, err := Load(Params{}); err == nil {
-		t.Errorf("Load without a repository root = %+v, want an error", got)
-	}
+	got, err := Load(Params{})
+	assert.Error(t, err, "Load without a repository root = %+v, want an error", got)
 }
 
 func TestLoadExplicitPath(t *testing.T) {
 	root := repoWith(t, "threshold: 0.8\ncontext: discovered\n")
 	cwd := filepath.Join(root, "sub")
-	if err := os.MkdirAll(cwd, 0o755); err != nil {
-		t.Fatalf("creating %s: %v", cwd, err)
-	}
+	require.NoError(t, os.MkdirAll(cwd, 0o755), "creating %s", cwd)
 	write(t, filepath.Join(cwd, "custom.yml"), "threshold: 0.6\ncontext: explicit\n")
 
 	want := Config{Threshold: 0.6, Context: "explicit"}
@@ -391,22 +363,14 @@ func TestLoadExplicitPath(t *testing.T) {
 		// The path came from a shell, so it means what the shell means: it is
 		// resolved against the working directory, not the repository root.
 		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "custom.yml"})
-		if err != nil {
-			t.Fatalf("Load returned %v", err)
-		}
-		if got != want {
-			t.Errorf("Load = %+v, want %+v", got, want)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
 	})
 
 	t.Run("absolute", func(t *testing.T) {
 		got, err := Load(Params{RepoRoot: root, Cwd: root, Path: filepath.Join(cwd, "custom.yml")})
-		if err != nil {
-			t.Fatalf("Load returned %v", err)
-		}
-		if got != want {
-			t.Errorf("Load = %+v, want %+v", got, want)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
 	})
 
 	t.Run("missing", func(t *testing.T) {
@@ -414,20 +378,15 @@ func TestLoadExplicitPath(t *testing.T) {
 		// repository root has a configuration: falling back would evaluate
 		// against settings the caller did not ask for.
 		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "absent.yml"})
-		if err == nil {
-			t.Fatalf("Load with a missing --config = %+v, want an error", got)
-		}
-		if !strings.Contains(err.Error(), "absent.yml") {
-			t.Errorf("Load error = %q, want it to name the missing file", err)
-		}
+		require.Error(t, err, "Load with a missing --config = %+v, want an error", got)
+		require.ErrorContains(t, err, "absent.yml", "the error must name the missing file")
 	})
 
 	t.Run("invalid", func(t *testing.T) {
 		write(t, filepath.Join(cwd, "broken.yml"), "safe_paths: [docs]\n")
 
-		if got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "broken.yml"}); err == nil {
-			t.Fatalf("Load with an invalid --config = %+v, want an error", got)
-		}
+		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "broken.yml"})
+		require.Error(t, err, "Load with an invalid --config = %+v, want an error", got)
 	})
 }
 
@@ -437,26 +396,18 @@ func TestLoadUnreadableFile(t *testing.T) {
 	}
 
 	root := repoWith(t, "threshold: 0.8\n")
-	if err := os.Chmod(filepath.Join(root, FileName), 0o000); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
+	require.NoError(t, os.Chmod(filepath.Join(root, FileName), 0o000), "chmod")
 
 	// A configuration that exists but cannot be read is not the same as a
 	// repository without one, so it must not fall back to the defaults.
 	got, err := Load(Params{RepoRoot: root})
-	if err == nil {
-		t.Fatalf("Load of an unreadable configuration = %+v, want an error", got)
-	}
+	require.Error(t, err, "Load of an unreadable configuration = %+v, want an error", got)
 }
 
 func TestLoadOversizedFile(t *testing.T) {
 	root := repoWith(t, "context: |\n  "+strings.Repeat("a", maxFileSize)+"\n")
 
 	got, err := Load(Params{RepoRoot: root})
-	if err == nil {
-		t.Fatalf("Load of an oversized configuration = %+v, want an error", got)
-	}
-	if !strings.Contains(err.Error(), "larger than") {
-		t.Errorf("Load error = %q, want it to explain the size limit", err)
-	}
+	require.Error(t, err, "Load of an oversized configuration = %+v, want an error", got)
+	require.ErrorContains(t, err, "larger than", "the error must explain the size limit")
 }

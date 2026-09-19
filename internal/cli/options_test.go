@@ -3,6 +3,9 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseOptions(t *testing.T) {
@@ -92,12 +95,8 @@ func TestParseOptions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := ParseOptions(test.args)
-			if err != nil {
-				t.Fatalf("ParseOptions(%q) returned %v, want %+v", test.args, err, test.want)
-			}
-			if got != test.want {
-				t.Errorf("ParseOptions(%q) = %+v, want %+v", test.args, got, test.want)
-			}
+			require.NoError(t, err, "ParseOptions(%q), want %+v", test.args, test.want)
+			assert.Equal(t, test.want, got, "ParseOptions(%q)", test.args)
 		})
 	}
 }
@@ -265,18 +264,12 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := ParseOptions(test.args)
-			if err == nil {
-				t.Fatalf("ParseOptions(%q) = %+v, want an error", test.args, got)
-			}
-			if !strings.Contains(err.Error(), test.want) {
-				t.Errorf("ParseOptions(%q) error = %q, want it to mention %q", test.args, err, test.want)
-			}
+			require.Error(t, err, "ParseOptions(%q) = %+v, want an error", test.args, got)
+			require.ErrorContains(t, err, test.want, "ParseOptions(%q)", test.args)
 			// Rejected input must not leave a usable run behind: a caller
 			// that ignored the error would otherwise evaluate a change the
 			// user never asked for.
-			if got != (Options{}) {
-				t.Errorf("ParseOptions(%q) returned %+v with an error, want the zero Options", test.args, got)
-			}
+			assert.Equal(t, Options{}, got, "ParseOptions(%q) returned options alongside an error", test.args)
 		})
 	}
 }
@@ -299,14 +292,11 @@ func TestParseOptionsHelpAndVersion(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := ParseOptions(test.args)
-		if err != nil {
-			t.Errorf("ParseOptions(%q) returned %v, want %+v", test.args, err, test.want)
-			continue
-		}
-		if got != test.want {
-			t.Errorf("ParseOptions(%q) = %+v, want %+v", test.args, got, test.want)
-		}
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			got, err := ParseOptions(test.args)
+			require.NoError(t, err, "want %+v", test.want)
+			assert.Equal(t, test.want, got)
+		})
 	}
 }
 
@@ -315,21 +305,11 @@ func TestParseOptionsDefaults(t *testing.T) {
 	// the configuration loader, which cannot tell an omitted flag from a
 	// deliberate 0 unless the parser keeps them apart.
 	got, err := ParseOptions([]string{"main", "HEAD"})
-	if err != nil {
-		t.Fatalf("ParseOptions returned %v", err)
-	}
-	if got.ThresholdSet {
-		t.Errorf("ParseOptions without --threshold set ThresholdSet, want it unset")
-	}
-	if got.Threshold != 0 {
-		t.Errorf("ParseOptions without --threshold set Threshold = %v, want 0", got.Threshold)
-	}
-	if got.ConfigPath != "" {
-		t.Errorf("ParseOptions without --config set ConfigPath = %q, want an empty path", got.ConfigPath)
-	}
-	if got.Format != FormatText {
-		t.Errorf("ParseOptions without --format set Format = %q, want %q", got.Format, FormatText)
-	}
+	require.NoError(t, err)
+	assert.False(t, got.ThresholdSet, "ParseOptions without --threshold set ThresholdSet")
+	assert.Zero(t, got.Threshold, "ParseOptions without --threshold set a threshold")
+	assert.Empty(t, got.ConfigPath, "ParseOptions without --config set a path")
+	assert.Equal(t, FormatText, got.Format, "ParseOptions without --format")
 }
 
 func TestParseOptionsDoesNotMutateArgs(t *testing.T) {
@@ -337,12 +317,7 @@ func TestParseOptionsDoesNotMutateArgs(t *testing.T) {
 	args := []string{"--threshold", "0.98", "main", "HEAD"}
 	want := []string{"--threshold", "0.98", "main", "HEAD"}
 
-	if _, err := ParseOptions(args); err != nil {
-		t.Fatalf("ParseOptions returned %v", err)
-	}
-	for i := range want {
-		if args[i] != want[i] {
-			t.Fatalf("ParseOptions modified its arguments: %q, want %q", args, want)
-		}
-	}
+	_, err := ParseOptions(args)
+	require.NoError(t, err)
+	assert.Equal(t, want, args, "ParseOptions modified its arguments")
 }
