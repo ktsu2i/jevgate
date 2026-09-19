@@ -9,6 +9,8 @@ import (
 )
 
 func TestParseOptions(t *testing.T) {
+	t.Parallel()
+
 	positional := Options{Base: "main", Head: "HEAD", Format: FormatText}
 
 	tests := []struct {
@@ -94,6 +96,8 @@ func TestParseOptions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := ParseOptions(test.args)
 			require.NoError(t, err, "ParseOptions(%q), want %+v", test.args, test.want)
 			assert.Equal(t, test.want, got, "ParseOptions(%q)", test.args)
@@ -102,6 +106,8 @@ func TestParseOptions(t *testing.T) {
 }
 
 func TestParseOptionsRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		args []string
@@ -263,6 +269,8 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := ParseOptions(test.args)
 			require.Error(t, err, "ParseOptions(%q) = %+v, want an error", test.args, got)
 			require.ErrorContains(t, err, test.want, "ParseOptions(%q)", test.args)
@@ -275,6 +283,8 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 }
 
 func TestParseOptionsHelpAndVersion(t *testing.T) {
+	t.Parallel()
+
 	// Help and version print and exit, so they are accepted with or without
 	// revisions and are not held to the rest of the validation.
 	tests := []struct {
@@ -293,6 +303,8 @@ func TestParseOptionsHelpAndVersion(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			t.Parallel()
+
 			got, err := ParseOptions(test.args)
 			require.NoError(t, err, "want %+v", test.want)
 			assert.Equal(t, test.want, got)
@@ -301,6 +313,8 @@ func TestParseOptionsHelpAndVersion(t *testing.T) {
 }
 
 func TestParseOptionsDefaults(t *testing.T) {
+	t.Parallel()
+
 	// The parser reports only what was given. Threshold resolution belongs to
 	// the configuration loader, which cannot tell an omitted flag from a
 	// deliberate 0 unless the parser keeps them apart.
@@ -313,6 +327,8 @@ func TestParseOptionsDefaults(t *testing.T) {
 }
 
 func TestParseOptionsDoesNotMutateArgs(t *testing.T) {
+	t.Parallel()
+
 	// Run passes os.Args[1:]; parsing must not reorder or consume it.
 	args := []string{"--threshold", "0.98", "main", "HEAD"}
 	want := []string{"--threshold", "0.98", "main", "HEAD"}

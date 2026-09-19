@@ -18,12 +18,16 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 }
 
 func TestExitCodes(t *testing.T) {
+	t.Parallel()
+
 	assert.Equal(t, 0, ExitAllow, "the allow exit code changed")
 	assert.Equal(t, 1, ExitHumanReview, "the human review exit code changed")
 	assert.Equal(t, 2, ExitError, "the error exit code changed")
 }
 
 func TestRunHelp(t *testing.T) {
+	t.Parallel()
+
 	// Help documents both revision forms and the exit codes, and it stays
 	// available when it follows the revisions.
 	sections := []string{
@@ -56,6 +60,8 @@ func TestRunHelp(t *testing.T) {
 }
 
 func TestRunVersion(t *testing.T) {
+	t.Parallel()
+
 	code, stdout, stderr := runCLI(t, "--version")
 	assert.Equal(t, ExitAllow, code, "Run(--version) (stderr: %q)", stderr)
 	assert.Empty(t, stderr, "Run(--version) wrote to stderr")
@@ -63,11 +69,17 @@ func TestRunVersion(t *testing.T) {
 }
 
 func TestVersionDefaultsToDev(t *testing.T) {
+	t.Parallel()
+
 	// Release builds override this variable at link time; development builds
 	// must report "dev".
 	assert.Equal(t, "dev", version)
 }
 
+// This test is not parallel: t.Chdir and t.Setenv change state the whole
+// process shares, and the testing package panics if either is called from a
+// parallel test. The parallel tests resume only once this one has returned and
+// its cleanup has put the working directory and the environment back.
 func TestRunHelpAndVersionNeedNoRepositoryOrAPIKey(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("JEV_API_KEY", "")
@@ -80,6 +92,8 @@ func TestRunHelpAndVersionNeedNoRepositoryOrAPIKey(t *testing.T) {
 }
 
 func TestRunEvaluationIsNotImplemented(t *testing.T) {
+	t.Parallel()
+
 	// The evaluation path is wired up in a later task. It must fail with the
 	// error code instead of reporting an allowed AI approval, and it must keep
 	// stdout free of a decision so that --format json stays parsable.
@@ -98,6 +112,8 @@ func TestRunEvaluationIsNotImplemented(t *testing.T) {
 }
 
 func TestRunWithoutArguments(t *testing.T) {
+	t.Parallel()
+
 	code, stdout, stderr := runCLI(t)
 	assert.Equal(t, ExitError, code, "Run() (stdout: %q)", stdout)
 	assert.Empty(t, stdout, "Run() wrote to stdout")

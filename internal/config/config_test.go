@@ -30,6 +30,8 @@ func write(t *testing.T, path, content string) {
 }
 
 func TestLoadFile(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		content string
@@ -92,6 +94,8 @@ func TestLoadFile(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := Load(Params{RepoRoot: repoWith(t, test.content)})
 			require.NoError(t, err, "Load, want %+v", test.want)
 			assert.Equal(t, test.want, got)
@@ -100,6 +104,8 @@ func TestLoadFile(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidFile(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		content string
@@ -227,6 +233,8 @@ func TestLoadRejectsInvalidFile(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			root := repoWith(t, test.content)
 
 			got, err := Load(Params{RepoRoot: root})
@@ -243,6 +251,8 @@ func TestLoadRejectsInvalidFile(t *testing.T) {
 }
 
 func TestLoadPrecedence(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		content      string
@@ -297,6 +307,8 @@ func TestLoadPrecedence(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			var root string
 			if test.content == "" {
 				root = repoWith(t)
@@ -316,6 +328,8 @@ func TestLoadPrecedence(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidOverride(t *testing.T) {
+	t.Parallel()
+
 	// The parser validates the flag first, but the loader is the last place
 	// that can keep an unusable threshold out of the comparison.
 	for _, threshold := range []float64{-0.1, 1.1, math.NaN(), math.Inf(1), math.Inf(-1)} {
@@ -325,6 +339,8 @@ func TestLoadRejectsInvalidOverride(t *testing.T) {
 }
 
 func TestLoadDiscoversOnlyTheRepositoryRoot(t *testing.T) {
+	t.Parallel()
+
 	root := repoWith(t, "threshold: 0.8\ncontext: root configuration\n")
 	sub := filepath.Join(root, "internal", "cli")
 	require.NoError(t, os.MkdirAll(sub, 0o755), "creating %s", sub)
@@ -338,6 +354,8 @@ func TestLoadDiscoversOnlyTheRepositoryRoot(t *testing.T) {
 }
 
 func TestLoadRelativePathWithoutAWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
 	// A relative --config has no meaning without the directory it came from,
 	// and guessing one could read a different repository's configuration.
 	got, err := Load(Params{RepoRoot: repoWith(t), Path: "custom.yml"})
@@ -345,6 +363,8 @@ func TestLoadRelativePathWithoutAWorkingDirectory(t *testing.T) {
 }
 
 func TestLoadWithoutARepositoryRoot(t *testing.T) {
+	t.Parallel()
+
 	// Discovery has nowhere to look, which is a caller mistake rather than a
 	// repository without a configuration.
 	got, err := Load(Params{})
@@ -352,6 +372,8 @@ func TestLoadWithoutARepositoryRoot(t *testing.T) {
 }
 
 func TestLoadExplicitPath(t *testing.T) {
+	t.Parallel()
+
 	root := repoWith(t, "threshold: 0.8\ncontext: discovered\n")
 	cwd := filepath.Join(root, "sub")
 	require.NoError(t, os.MkdirAll(cwd, 0o755), "creating %s", cwd)
@@ -360,6 +382,8 @@ func TestLoadExplicitPath(t *testing.T) {
 	want := Config{Threshold: 0.6, Context: "explicit"}
 
 	t.Run("relative to the working directory", func(t *testing.T) {
+		t.Parallel()
+
 		// The path came from a shell, so it means what the shell means: it is
 		// resolved against the working directory, not the repository root.
 		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "custom.yml"})
@@ -368,12 +392,16 @@ func TestLoadExplicitPath(t *testing.T) {
 	})
 
 	t.Run("absolute", func(t *testing.T) {
+		t.Parallel()
+
 		got, err := Load(Params{RepoRoot: root, Cwd: root, Path: filepath.Join(cwd, "custom.yml")})
 		require.NoError(t, err)
 		assert.Equal(t, want, got)
 	})
 
 	t.Run("missing", func(t *testing.T) {
+		t.Parallel()
+
 		// An explicit path that does not exist is an error even though the
 		// repository root has a configuration: falling back would evaluate
 		// against settings the caller did not ask for.
@@ -383,6 +411,8 @@ func TestLoadExplicitPath(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
+		t.Parallel()
+
 		write(t, filepath.Join(cwd, "broken.yml"), "safe_paths: [docs]\n")
 
 		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "broken.yml"})
@@ -391,6 +421,8 @@ func TestLoadExplicitPath(t *testing.T) {
 }
 
 func TestLoadUnreadableFile(t *testing.T) {
+	t.Parallel()
+
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permissions are not enforced")
 	}
@@ -405,6 +437,8 @@ func TestLoadUnreadableFile(t *testing.T) {
 }
 
 func TestLoadOversizedFile(t *testing.T) {
+	t.Parallel()
+
 	root := repoWith(t, "context: |\n  "+strings.Repeat("a", maxFileSize)+"\n")
 
 	got, err := Load(Params{RepoRoot: root})
