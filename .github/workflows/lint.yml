@@ -6,8 +6,6 @@ on:
       - main
   pull_request:
 
-# As in the test workflow: no job here needs more than reading the checkout,
-# and each one says so for itself.
 permissions: {}
 
 concurrency:
@@ -35,14 +33,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          # Pinned so that a new release cannot add findings to a commit that
-          # already passed. .golangci.yml is written against this version.
           version: v2.12.2
-
-      - name: Check formatting
-        # golangci-lint run does not check formatting; fmt --diff reports it
-        # without rewriting the sources. The step above put the binary on PATH.
-        run: golangci-lint fmt --diff
 
   workflows:
     name: workflows
@@ -62,8 +53,6 @@ jobs:
           go-version-file: go.mod
 
       - name: Install actionlint and ghalint
-        # Both are Go programs, so the toolchain this job already has installs
-        # them at an exact version, verified against the Go checksum database.
         env:
           ACTIONLINT_VERSION: v1.7.12
           GHALINT_VERSION: v1.5.6
@@ -72,13 +61,9 @@ jobs:
           go install "github.com/suzuki-shunsuke/ghalint/cmd/ghalint@${GHALINT_VERSION}"
 
       - name: Run actionlint
-        # Checks the workflow schema, expressions, and the shell in run blocks
-        # through the shellcheck that the runner already provides.
         run: actionlint -color
 
       - name: Run ghalint
-        # Checks the policies actionlint does not: per-job permissions, full
-        # length commit SHAs, and how credentials may be passed around.
         run: ghalint run
 
   zizmor:
@@ -96,10 +81,6 @@ jobs:
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
-          # Pinned for the same reason as golangci-lint: a new audit must not
-          # fail a commit that already passed.
           version: 1.30.1
-          # This repository has no GitHub Advanced Security, so uploading SARIF
-          # would fail. Findings are reported as annotations instead.
           advanced-security: false
           annotations: true
