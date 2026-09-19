@@ -11,61 +11,41 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Output formats accepted by --format.
 const (
 	FormatText = "text"
 	FormatJSON = "json"
 )
 
-// Options is the normalized command line input. It is the only description of
-// the run that later stages receive: parsing happens once, before any Git or
-// API work, so that invalid input can never reach a decision.
+// Options is validated command-line input.
 type Options struct {
-	// Base and Head are the revisions to compare. They are non-empty and free
-	// of range expressions, but they are not resolved here: whether Git can
-	// resolve them is decided when the diff is collected.
+	// Base and Head are the revisions to compare.
 	Base string
 	Head string
 
-	// ConfigPath is the --config value, empty when the flag was omitted. A
-	// relative path is resolved against the working directory by the
-	// configuration loader, not here.
+	// ConfigPath is the optional --config value.
 	ConfigPath string
 
-	// Threshold is the --threshold override and ThresholdSet reports whether
-	// the flag was given. The two are kept apart because 0 is a valid
-	// threshold and must stay distinguishable from an omitted flag.
+	// Threshold and ThresholdSet preserve an explicit zero override.
 	Threshold    float64
 	ThresholdSet bool
 
-	// Format is FormatText or FormatJSON.
+	// Format selects text or JSON output.
 	Format string
 
-	// Help and Version report that the run only prints information. The
-	// remaining fields are then zero: both work without revisions, a Git
-	// repository, or an API key, so nothing else is validated.
+	// Help and Version select informational output.
 	Help    bool
 	Version bool
 }
 
-// ParseOptions parses and validates args, which excludes the program name.
-//
-// Options may appear before or after the positional revisions, and everything
-// after a "--" terminator is a revision. Parsing rejects input rather than
-// repairing it: an unusable command line is an error, never a negative
-// decision.
+// ParseOptions parses and validates arguments excluding the program name.
 func ParseOptions(args []string) (Options, error) {
 	flags := pflag.NewFlagSet("jevgate", pflag.ContinueOnError)
-	// Usage is printed by Run from its own help text, so the flag set must
-	// stay silent and report errors only through the return value.
 	flags.SetOutput(io.Discard)
 	flags.Usage = func() {}
 
 	base := flags.String("base", "", "base revision")
 	head := flags.String("head", "", "head revision")
 	configPath := flags.String("config", "", "configuration file")
-	// The threshold is kept as a string so that this package, and not pflag,
-	// decides what a malformed or out-of-range number looks like.
 	threshold := flags.String("threshold", "", "probability required to allow AI approval")
 	format := flags.String("format", FormatText, "output format")
 	help := flags.BoolP("help", "h", false, "print help and exit")
@@ -105,10 +85,6 @@ func ParseOptions(args []string) (Options, error) {
 	return opts, nil
 }
 
-// revisions returns the base and head revisions from whichever form was used.
-// The two forms are equivalent but exclusive: mixing them is an error even
-// when the values agree, because the command then has two sources for one
-// revision and no rule says which one wins.
 func revisions(flags *pflag.FlagSet, baseFlag, headFlag string) (base, head string, err error) {
 	positional := flags.Args()
 	byFlag := flags.Changed("base") || flags.Changed("head")
@@ -134,9 +110,7 @@ func revisions(flags *pflag.FlagSet, baseFlag, headFlag string) (base, head stri
 		return base, head, nil
 	}
 
-	// Each revision is checked before the count so that a range expression is
-	// reported as such: "jevgate main...HEAD" is the common mistake, and
-	// "expected two revisions" would not explain it.
+	// Validate first so a range expression gets the actionable error.
 	for _, revision := range positional {
 		if err := validateRevision("revision", revision); err != nil {
 			return "", "", err
@@ -148,9 +122,6 @@ func revisions(flags *pflag.FlagSet, baseFlag, headFlag string) (base, head stri
 	return positional[0], positional[1], nil
 }
 
-// validateRevision rejects the revisions this tool cannot compare. Anything
-// else is left to Git: branches, tags, and expressions such as HEAD~1 are all
-// acceptable revisions and must not be refused by a stricter rule here.
 func validateRevision(name, revision string) error {
 	switch {
 	case revision == "":
@@ -161,7 +132,6 @@ func validateRevision(name, revision string) error {
 	return nil
 }
 
-// parseThreshold converts the --threshold value into a probability.
 func parseThreshold(value string) (float64, error) {
 	threshold, err := strconv.ParseFloat(value, 64)
 	switch {

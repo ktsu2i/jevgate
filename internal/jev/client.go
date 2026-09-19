@@ -21,14 +21,10 @@ const (
 	requestTimeout    = 30 * time.Second
 	assessmentTimeout = 90 * time.Second
 	maxResponseBytes  = 1 << 20
-	// This bounds the complete JSON, including escaped data and the question.
-	// It is NOT a token guarantee: Jev 1.13 also limits state + the longest
-	// question to 32k tokens. API rejections remain errors, never truncation.
-	maxRequestBytes = 128 << 10
+	maxRequestBytes   = 128 << 10
 )
 
-// Client evaluates changes with one fixed question and model. Construct it
-// with NewClient; it is safe for concurrent Assess calls.
+// Client evaluates changes with a fixed question and model.
 type Client struct {
 	apiKey            string
 	httpClient        *http.Client
@@ -38,10 +34,7 @@ type Client struct {
 	wait              func(context.Context, time.Duration) error
 }
 
-// NewClient takes the key from the caller (normally CLI's JEV_API_KEY) and an
-// optional HTTP client. It copies the client so enforcing redirect rejection
-// does not mutate the caller's settings. A shorter client timeout is preserved.
-// Custom transports must honor request contexts and must not replay POSTs.
+// NewClient creates a client without mutating the supplied HTTP client.
 func NewClient(apiKey string, httpClient *http.Client) *Client {
 	client := http.Client{}
 	if httpClient != nil {
@@ -57,8 +50,7 @@ func NewClient(apiKey string, httpClient *http.Client) *Client {
 	}
 }
 
-// Assess returns only the affirmative probability. Errors never become a
-// negative assessment or an approval. No request or response content is logged.
+// Assess returns the probability that AI approval is sufficient.
 func (c *Client) Assess(ctx context.Context, diff git.Diff, repoContext string) (Assessment, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.assessmentTimeout)
 	defer cancel()
@@ -108,14 +100,13 @@ func (c *Client) attempt(ctx context.Context, data []byte) (assessment Assessmen
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// URLs, redirect locations and transport errors can contain secrets.
-		// Preserve only known context errors, never the original error text.
+		// Transport errors may contain credentials or request data.
 		return Assessment{}, 0, "", communicationFailure(ctx, 0, "transport error", err)
 	}
 	defer resp.Body.Close()
 	status = resp.StatusCode
 	if status < 200 || status >= 300 {
-		// Error bodies can echo the complete input. Do not read or print them.
+		// Error bodies may echo the complete input.
 		return Assessment{}, status, resp.Header.Get("Retry-After"), failure(status, statusCategory(status), nil)
 	}
 	data, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
@@ -142,8 +133,7 @@ func decodeAssessment(data []byte) (Assessment, error) {
 			Noul *float64 `json:"noul"`
 		} `json:"answers"`
 	}
-	// Unmarshal rejects trailing JSON documents but accepts added metadata.
-	// Its errors may quote input, so return fixed diagnostics instead.
+	// JSON errors may quote sensitive response data.
 	if err := json.Unmarshal(data, &response); err != nil {
 		return Assessment{}, errors.New("malformed JSON or answer schema")
 	}
@@ -189,8 +179,6 @@ func communicationFailure(ctx context.Context, status int, category string, err 
 	return failure(status, category, nil)
 }
 
-// Only canonical context errors are ever wrapped, including when injected
-// dependencies fail. A status of zero means no HTTP response was received.
 func failure(status int, category string, cause error) error {
 	message := "jev: " + category
 	if status != 0 {

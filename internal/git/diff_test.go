@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Git file modes, as the raw diff prints them.
 const (
 	modeNone       = "000000"
 	modeRegular    = "100644"
@@ -19,7 +18,6 @@ const (
 	modeSymlink    = "120000"
 )
 
-// writeBase builds the commit that every case in TestCollect starts from.
 func writeBase(r *repo) {
 	r.write("kept.txt", "unchanged\n")
 	r.write("edited.txt", "one\ntwo\nthree\n")
@@ -29,7 +27,6 @@ func writeBase(r *repo) {
 	r.symlink("kept.txt", "link")
 }
 
-// collect compares two commits of the repository.
 func (r *repo) collect(base, head string) (Diff, error) {
 	r.t.Helper()
 
@@ -43,7 +40,7 @@ func TestCollect(t *testing.T) {
 		name  string
 		head  func(r *repo)
 		want  []File
-		patch []string // text the patch has to contain
+		patch []string
 	}{
 		{
 			name: "added file",
@@ -55,8 +52,6 @@ func TestCollect(t *testing.T) {
 			},
 		},
 		{
-			// An empty file carries no patch text at all, so the file list is
-			// the only place the change can be seen.
 			name:  "added empty file",
 			head:  func(r *repo) { r.write("empty.txt", "") },
 			want:  []File{{Change: Added, NewPath: "empty.txt", OldMode: modeNone, NewMode: modeRegular}},
@@ -78,8 +73,6 @@ func TestCollect(t *testing.T) {
 			},
 		},
 		{
-			// A change that only adds a space is still a change, and a diff
-			// that quietly drops it would be evaluated as something else.
 			name:  "whitespace only change",
 			head:  func(r *repo) { r.write("edited.txt", "one \ntwo\nthree\n") },
 			want:  []File{{Change: Modified, OldPath: "edited.txt", NewPath: "edited.txt", OldMode: modeRegular, NewMode: modeRegular}},
@@ -157,9 +150,6 @@ func TestCollect(t *testing.T) {
 func TestCollectReadsAwkwardPaths(t *testing.T) {
 	t.Parallel()
 
-	// The file list comes from Git's NUL separated output, so a path is
-	// carried through exactly as it is stored, including the characters that
-	// the patch itself has to escape to stay readable.
 	paths := []string{
 		"with space.txt",
 		"日本語.txt",
@@ -204,9 +194,6 @@ func TestCollectComparesTheCommitsDirectly(t *testing.T) {
 	diff, err := r.collect(base, head)
 	require.NoError(t, err)
 
-	// Comparing against the merge base would report only the added file. The
-	// reviewer approved the head as a replacement for the base, so what the
-	// head lacks is part of the change.
 	assert.Equal(t, []File{
 		{Change: Deleted, OldPath: "base-only.txt", OldMode: modeRegular, NewMode: modeNone},
 		{Change: Added, NewPath: "head-only.txt", OldMode: modeNone, NewMode: modeRegular},
@@ -222,14 +209,10 @@ func TestCollectIgnoresTheWorkingTree(t *testing.T) {
 	r.write("committed.txt", "two\n")
 	head := r.commit("head")
 
-	// None of this is part of either commit, and a comparison of two commits
-	// that reported it would evaluate a change nobody proposed.
 	r.write("committed.txt", "edited in the working tree\n")
 	r.write("staged.txt", "staged but not committed\n")
 	r.git("add", "staged.txt")
 	r.write("untracked.txt", "never added\n")
-	// An attribute file that is not committed either: the attributes that
-	// decide how a diff is shown come from the head commit.
 	r.write(".gitattributes", "*.txt -diff\n")
 
 	diff, err := r.collect(base, head)
@@ -242,8 +225,6 @@ func TestCollectIgnoresTheWorkingTree(t *testing.T) {
 	assert.NotContains(t, diff.Patch, "working tree")
 }
 
-// sentinelProgram writes a program that records having been run, and returns
-// it together with the file it would create.
 func sentinelProgram(t *testing.T) (program, sentinel string) {
 	t.Helper()
 
@@ -255,7 +236,6 @@ func sentinelProgram(t *testing.T) (program, sentinel string) {
 	return program, sentinel
 }
 
-// assertNotRun fails when the sentinel program left its mark.
 func assertNotRun(t *testing.T, sentinel string) {
 	t.Helper()
 
@@ -269,8 +249,6 @@ func TestCollectDoesNotRunConfiguredPrograms(t *testing.T) {
 	program, sentinel := sentinelProgram(t)
 
 	r := newRepo(t)
-	// A repository can configure a program for every file it shows. The
-	// change under review is data to be read, never something to execute.
 	r.git("config", "diff.external", program)
 	r.write("a.txt", "one\n")
 	base := r.commit("base")
@@ -285,8 +263,7 @@ func TestCollectDoesNotRunConfiguredPrograms(t *testing.T) {
 	assert.Contains(t, diff.Patch, "+two")
 }
 
-// TestCollectDoesNotRunTheEnvironmentsDiffProgram cannot run in parallel: it
-// sets the variable for the whole process, which is the only way Git reads it.
+// This test mutates the process environment and cannot run in parallel.
 func TestCollectDoesNotRunTheEnvironmentsDiffProgram(t *testing.T) {
 	program, sentinel := sentinelProgram(t)
 	t.Setenv("GIT_EXTERNAL_DIFF", program)
@@ -310,26 +287,19 @@ func TestCollectRejectsIncompleteDiffs(t *testing.T) {
 	tests := []struct {
 		name      string
 		configure func(r *repo)
-		want      string // text the diagnostic has to explain
+		want      string
 	}{
 		{
-			// "-diff" turns a text file into "Binary files differ", which
-			// would be sent for evaluation as a change with no content.
 			name:      "attribute hides the contents",
 			configure: func(r *repo) { r.write(".gitattributes", "secret.txt -diff\n") },
 			want:      "-diff",
 		},
 		{
-			// A named driver decides for itself what a diff of the file looks
-			// like, including declaring it binary.
 			name:      "attribute names a diff driver",
 			configure: func(r *repo) { r.write(".gitattributes", "secret.txt diff=sentinel\n") },
 			want:      "sentinel",
 		},
 		{
-			// The same attribute set where only this checkout can see it. It
-			// is not part of either commit, but Git still applies it, so
-			// reading the committed .gitattributes alone would miss it.
 			name:      "attribute set outside the commits",
 			configure: func(r *repo) { r.write(".git/info/attributes", "secret.txt -diff\n") },
 			want:      "-diff",
@@ -364,8 +334,8 @@ func TestCollectRejectsUnevaluableChanges(t *testing.T) {
 
 	tests := []struct {
 		name string
-		head func(r *repo) string // records the head commit
-		want string               // text the diagnostic has to explain
+		head func(r *repo) string
+		want string
 	}{
 		{
 			name: "binary file",
@@ -378,8 +348,6 @@ func TestCollectRejectsUnevaluableChanges(t *testing.T) {
 		{
 			name: "submodule",
 			head: func(r *repo) string {
-				// A gitlink records another repository's commit. Its own
-				// change is not in this diff, so it cannot be evaluated here.
 				r.git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("0", 39)+"1,vendor")
 				return r.commitIndex("head")
 			},
@@ -388,9 +356,6 @@ func TestCollectRejectsUnevaluableChanges(t *testing.T) {
 		{
 			name: "path that is not valid UTF-8",
 			head: func(r *repo) string {
-				// The path never reaches the file system: encoding it for the
-				// API would replace the bytes with U+FFFD, and the evaluated
-				// path would no longer be the one that changed.
 				r.write("source.txt", "content\n")
 				blob := strings.TrimSpace(r.git("hash-object", "-w", "source.txt"))
 				r.git("update-index", "--add", "--cacheinfo", "100644,"+blob+",bad\xffname.txt")
@@ -422,7 +387,6 @@ func TestCollectRejectsIdenticalCommits(t *testing.T) {
 	r := newRepo(t)
 	r.write("a.txt", "one\n")
 	base := r.commit("base")
-	// A commit that changes nothing but its message has the same contents.
 	r.git("commit", "--quiet", "--allow-empty", "--message", "head")
 	head := strings.TrimSpace(r.git("rev-parse", "HEAD"))
 
@@ -454,9 +418,6 @@ func TestCollectRejectsUnresolvedRevisions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Resolving happens once, before anything is compared: a branch
-			// that moves between two commands would otherwise let one run
-			// compare two different pairs of commits.
 			_, err := repository.Collect(t.Context(), test.base, test.head)
 			require.ErrorIs(t, err, ErrRevision)
 		})

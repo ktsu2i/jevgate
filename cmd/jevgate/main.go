@@ -1,5 +1,3 @@
-// Command jevgate decides whether an AI code reviewer's approval may replace a
-// human approval for a change.
 package main
 
 import (
@@ -15,8 +13,7 @@ func main() {
 	os.Exit(run())
 }
 
-// run keeps os.Exit in main so that the signal handler is released before the
-// process exits.
+// Keep os.Exit outside run so deferred signal cleanup executes.
 func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

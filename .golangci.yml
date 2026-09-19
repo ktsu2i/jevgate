@@ -1,24 +1,14 @@
-# golangci-lint configuration.
-#
-# Every check is opt-in: the default linter set is disabled so that an enabled
-# linter is always a deliberate choice, and upgrading golangci-lint never adds
-# a check without this file changing.
 version: "2"
 
 linters:
   default: none
   enable:
-    # Correctness. These are golangci-lint's own defaults, listed explicitly
-    # because "default: none" also switches them off.
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
 
-    # Error handling. The gate reports why it refused to decide, so an error
-    # that is dropped, unwrapped, or mistyped is a defect in the product, not
-    # only in the code.
     - errorlint
     - errname
     - nilerr
@@ -26,7 +16,6 @@ linters:
     - nilnil
     - errchkjson
 
-    # Bug-prone constructs.
     - asasalint
     - bidichk
     - copyloopvar
@@ -41,8 +30,6 @@ linters:
     - recvcheck
     - wastedassign
 
-    # Context and HTTP. The Jev client is the one outbound dependency: a
-    # request without a context, or a response body left open, is a hang.
     - bodyclose
     - canonicalheader
     - containedctx
@@ -50,7 +37,6 @@ linters:
     - fatcontext
     - noctx
 
-    # Style and clarity, kept to rules this codebase already follows.
     - dogsled
     - dupword
     - exptostd
@@ -74,14 +60,10 @@ linters:
     - usestdlibvars
     - whitespace
 
-    # Tests. The tests assert through testify, so the way testify is called
-    # is worth checking: its assertions report a pass when they are given the
-    # wrong argument order or the wrong function for the type.
     - testifylint
     - thelper
     - usetesting
 
-    # Suppressions must explain themselves.
     - nolintlint
 
   settings:
@@ -90,7 +72,6 @@ linters:
       check-blank: true
 
     exhaustive:
-      # A switch that ends in a default has stated what it does with the rest.
       default-signifies-exhaustive: true
 
     goconst:
@@ -104,13 +85,12 @@ linters:
         - style
 
     godot:
-      # Declaration comments are the documentation; inline comments are not.
       scope: declarations
 
     govet:
       enable-all: true
       disable:
-        # Field order is a readability decision here, not a memory budget.
+        # Field order is optimized for readability.
         - fieldalignment
 
     misspell:
@@ -122,8 +102,7 @@ linters:
       allow-unused: false
 
     testifylint:
-      # Every checker, named rather than switched on in bulk, so that a new
-      # release adds a check only when this list changes.
+      # Pin the rule set so upgrades cannot silently change it.
       enable:
         - blank-import
         - bool-compare
@@ -181,13 +160,11 @@ linters:
       - comments
       - std-error-handling
     rules:
-      # Test helpers assert on data they built themselves; requiring the
-      # security and duplication checks there hides no real risk.
+      # Test helpers operate only on fixtures they create.
       - path: _test\.go
         linters:
           - gosec
 
-# Formatting is checked, never silently rewritten in CI.
 formatters:
   enable:
     - gofmt

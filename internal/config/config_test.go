@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// repoWith creates a repository root containing the given .jevgate.yml, or no
-// configuration file at all when content is absent.
 func repoWith(t *testing.T, content ...string) string {
 	t.Helper()
 
@@ -58,7 +56,6 @@ func TestLoadFile(t *testing.T) {
 			want:    Config{Threshold: 0.98},
 		},
 		{
-			// An omitted key takes the default; an explicit 0 does not.
 			name:    "threshold of zero",
 			content: "threshold: 0\n",
 			want:    Config{Threshold: 0},
@@ -79,8 +76,6 @@ func TestLoadFile(t *testing.T) {
 			want:    Config{Threshold: 0.9, Context: "docs/ holds documentation"},
 		},
 		{
-			// The context reaches the model as written, so a block scalar
-			// must keep its line structure.
 			name:    "block scalar context",
 			content: "context: |\n  infra/ holds production Terraform.\n\n  tools/ is developer only.\n",
 			want:    Config{Threshold: DefaultThreshold, Context: "infra/ holds production Terraform.\n\ntools/ is developer only.\n"},
@@ -109,11 +104,9 @@ func TestLoadRejectsInvalidFile(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    string // a substring the diagnostic must explain
+		want    string
 	}{
 		{
-			// Path rules would move the decision out of the model, which is
-			// what this tool exists to avoid.
 			name:    "safe_paths",
 			content: "safe_paths:\n  - docs/**\n",
 			want:    `unknown key "safe_paths"`,
@@ -204,7 +197,6 @@ func TestLoadRejectsInvalidFile(t *testing.T) {
 			want:    "keys must be strings, got no value",
 		},
 		{
-			// A date is not a number, and YAML resolves it without quotes.
 			name:    "timestamp threshold",
 			content: "threshold: 2024-01-01\n",
 			want:    "must be a number",
@@ -242,8 +234,6 @@ func TestLoadRejectsInvalidFile(t *testing.T) {
 			require.ErrorContains(t, err, test.want)
 			require.ErrorContains(t, err, filepath.Join(root, FileName), "the error must name the configuration file")
 
-			// The command line must not paper over a broken file: the
-			// repository is misconfigured either way.
 			_, err = Load(Params{RepoRoot: root, Threshold: 0.99, ThresholdSet: true})
 			assert.Error(t, err, "Load with --threshold accepted an invalid configuration file")
 		})
@@ -297,7 +287,6 @@ func TestLoadPrecedence(t *testing.T) {
 			want:         1,
 		},
 		{
-			// Without ThresholdSet a zero override is just an absent flag.
 			name:      "zero without ThresholdSet is not an override",
 			content:   "threshold: 0.8\n",
 			threshold: 0,
@@ -330,8 +319,6 @@ func TestLoadPrecedence(t *testing.T) {
 func TestLoadRejectsInvalidOverride(t *testing.T) {
 	t.Parallel()
 
-	// The parser validates the flag first, but the loader is the last place
-	// that can keep an unusable threshold out of the comparison.
 	for _, threshold := range []float64{-0.1, 1.1, math.NaN(), math.Inf(1), math.Inf(-1)} {
 		got, err := Load(Params{RepoRoot: repoWith(t), Threshold: threshold, ThresholdSet: true})
 		assert.Error(t, err, "Load with --threshold %v = %+v, want an error", threshold, got)
@@ -344,8 +331,6 @@ func TestLoadDiscoversOnlyTheRepositoryRoot(t *testing.T) {
 	root := repoWith(t, "threshold: 0.8\ncontext: root configuration\n")
 	sub := filepath.Join(root, "internal", "cli")
 	require.NoError(t, os.MkdirAll(sub, 0o755), "creating %s", sub)
-	// A configuration next to the working directory is not a repository
-	// configuration and must be ignored.
 	write(t, filepath.Join(sub, FileName), "threshold: 0.1\n")
 
 	got, err := Load(Params{RepoRoot: root, Cwd: sub})
@@ -356,8 +341,6 @@ func TestLoadDiscoversOnlyTheRepositoryRoot(t *testing.T) {
 func TestLoadRelativePathWithoutAWorkingDirectory(t *testing.T) {
 	t.Parallel()
 
-	// A relative --config has no meaning without the directory it came from,
-	// and guessing one could read a different repository's configuration.
 	got, err := Load(Params{RepoRoot: repoWith(t), Path: "custom.yml"})
 	assert.Error(t, err, "Load of a relative path without a working directory = %+v, want an error", got)
 }
@@ -365,8 +348,6 @@ func TestLoadRelativePathWithoutAWorkingDirectory(t *testing.T) {
 func TestLoadWithoutARepositoryRoot(t *testing.T) {
 	t.Parallel()
 
-	// Discovery has nowhere to look, which is a caller mistake rather than a
-	// repository without a configuration.
 	got, err := Load(Params{})
 	assert.Error(t, err, "Load without a repository root = %+v, want an error", got)
 }
@@ -384,8 +365,6 @@ func TestLoadExplicitPath(t *testing.T) {
 	t.Run("relative to the working directory", func(t *testing.T) {
 		t.Parallel()
 
-		// The path came from a shell, so it means what the shell means: it is
-		// resolved against the working directory, not the repository root.
 		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "custom.yml"})
 		require.NoError(t, err)
 		assert.Equal(t, want, got)
@@ -402,9 +381,6 @@ func TestLoadExplicitPath(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 
-		// An explicit path that does not exist is an error even though the
-		// repository root has a configuration: falling back would evaluate
-		// against settings the caller did not ask for.
 		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "absent.yml"})
 		require.Error(t, err, "Load with a missing --config = %+v, want an error", got)
 		require.ErrorContains(t, err, "absent.yml", "the error must name the missing file")
@@ -430,8 +406,6 @@ func TestLoadUnreadableFile(t *testing.T) {
 	root := repoWith(t, "threshold: 0.8\n")
 	require.NoError(t, os.Chmod(filepath.Join(root, FileName), 0o000), "chmod")
 
-	// A configuration that exists but cannot be read is not the same as a
-	// repository without one, so it must not fall back to the defaults.
 	got, err := Load(Params{RepoRoot: root})
 	require.Error(t, err, "Load of an unreadable configuration = %+v, want an error", got)
 }

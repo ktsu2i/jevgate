@@ -14,10 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMain isolates the tests from the machine's own Git configuration. A
-// global diff driver or a system-wide setting must not be able to decide
-// whether these tests pass, and no test may write to either file: everything
-// a test configures goes into its own repository.
+// Ignore machine-wide Git configuration to keep tests deterministic.
 func TestMain(m *testing.M) {
 	for _, name := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"} {
 		if err := os.Setenv(name, os.DevNull); err != nil {
@@ -28,15 +25,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// repo is a Git repository created for one test.
 type repo struct {
 	t    *testing.T
 	root string
 }
 
-// newRepo creates an empty repository. The identity it commits with is
-// written to that repository's own configuration, so running the tests
-// changes nothing outside the temporary directory.
 func newRepo(t *testing.T) *repo {
 	t.Helper()
 
@@ -47,9 +40,6 @@ func newRepo(t *testing.T) *repo {
 	return r
 }
 
-// resolve returns the path Git reports for a directory. A temporary directory
-// is reached through a symbolic link on some systems, and Git answers with
-// the directory itself.
 func resolve(t *testing.T, path string) string {
 	t.Helper()
 
@@ -58,7 +48,6 @@ func resolve(t *testing.T, path string) string {
 	return resolved
 }
 
-// git runs one Git command in the repository and returns its output.
 func (r *repo) git(args ...string) string {
 	r.t.Helper()
 
@@ -67,7 +56,6 @@ func (r *repo) git(args ...string) string {
 	return string(out)
 }
 
-// write creates or replaces a file in the working tree.
 func (r *repo) write(path, content string) {
 	r.t.Helper()
 
@@ -76,29 +64,24 @@ func (r *repo) write(path, content string) {
 	require.NoError(r.t, os.WriteFile(full, []byte(content), 0o600), "writing %s", path)
 }
 
-// remove deletes a file from the working tree.
 func (r *repo) remove(path string) {
 	r.t.Helper()
 
 	require.NoError(r.t, os.Remove(filepath.Join(r.root, path)), "removing %s", path)
 }
 
-// symlink creates a symbolic link in the working tree.
 func (r *repo) symlink(target, path string) {
 	r.t.Helper()
 
 	require.NoError(r.t, os.Symlink(target, filepath.Join(r.root, path)), "linking %s", path)
 }
 
-// chmod changes a file's permissions, of which Git records only whether the
-// file is executable.
 func (r *repo) chmod(path string, mode os.FileMode) {
 	r.t.Helper()
 
 	require.NoError(r.t, os.Chmod(filepath.Join(r.root, path), mode), "changing the mode of %s", path)
 }
 
-// commit records the whole working tree and returns the new commit's ID.
 func (r *repo) commit(message string) string {
 	r.t.Helper()
 
@@ -106,7 +89,6 @@ func (r *repo) commit(message string) string {
 	return r.commitIndex(message)
 }
 
-// commitIndex records what is staged, leaving the working tree out of it.
 func (r *repo) commitIndex(message string) string {
 	r.t.Helper()
 
@@ -114,7 +96,6 @@ func (r *repo) commitIndex(message string) string {
 	return strings.TrimSpace(r.git("rev-parse", "HEAD"))
 }
 
-// discover returns the package's view of the repository.
 func (r *repo) discover() Repository {
 	r.t.Helper()
 
@@ -123,8 +104,6 @@ func (r *repo) discover() Repository {
 	return repository
 }
 
-// shallowClone clones the repository with a truncated history, as a CI
-// checkout does by default.
 func (r *repo) shallowClone(depth int) *repo {
 	r.t.Helper()
 
@@ -248,8 +227,6 @@ func TestResolveCommitRejects(t *testing.T) {
 		{name: "a tree", revision: "HEAD^{tree}"},
 		{name: "a blob", revision: "HEAD:a.txt"},
 		{name: "a range", revision: "HEAD~1..HEAD"},
-		// A revision that looks like an option has to stay a revision: Git
-		// must never be told to do something else by the value being resolved.
 		{name: "an option", revision: "--help"},
 		{name: "an option with a value", revision: "--git-dir=/nonexistent"},
 		{name: "a short option", revision: "-n"},
@@ -282,8 +259,6 @@ func TestResolveCommitInShallowClone(t *testing.T) {
 	require.NoError(t, err, "the commit the clone does have resolves")
 	assert.Equal(t, head, got)
 
-	// The missing commit exists, so the revision is not wrong; saying so is
-	// the difference between fetching more history and editing a workflow.
 	_, err = repository.ResolveCommit(t.Context(), "HEAD~1")
 	require.ErrorIs(t, err, ErrRevision)
 	assert.Contains(t, err.Error(), "fetch")

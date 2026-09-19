@@ -8,10 +8,8 @@ import (
 	"github.com/ktsu2i/jevgate/internal/git"
 )
 
-// API contract and model availability checked on 2026-09-19:
+// API contract checked on 2026-09-19:
 // https://docs.typesafe.ai/api
-// https://docs.typesafe.ai/models
-// https://docs.typesafe.ai/primitives/noul
 const (
 	modelID    = "jev-1.13.0"
 	questionID = "ai_approval_allowed"
@@ -44,8 +42,6 @@ type state struct {
 	RepositoryContext string        `json:"repository_context"`
 }
 
-// Keep the wire format independent of the Git package's Go field names.
-// Modes and both paths preserve renames, deletions, and mode-only changes.
 type changedFile struct {
 	Change  git.Change `json:"change"`
 	OldPath string     `json:"old_path"`

@@ -24,12 +24,9 @@ func retryable(status int) bool {
 	}
 }
 
-// retryDelay never shortens Retry-After. Positive jitter avoids synchronized
-// retries while retaining the 0.5s, 1s exponential minimum delays.
 func retryDelay(attempt int, header string, now time.Time) time.Duration {
 	backoff := baseBackoff << attempt
-	// This jitter spreads retry load; it does not generate a secret or make a
-	// security decision, so a cryptographic random source is unnecessary.
+	// Cryptographic randomness is unnecessary for load-spreading jitter.
 	delay := backoff + time.Duration(rand.Int64N(int64(backoff/2))) //nolint:gosec // Retry jitter is not security-sensitive randomness.
 	if after := retryAfter(header, now); after > delay {
 		delay = after
@@ -42,8 +39,7 @@ func retryAfter(header string, now time.Time) time.Duration {
 	if header == "" {
 		return 0
 	}
-	// Parse decimal digits explicitly so enormous valid delays cannot overflow
-	// a duration and become an immediate retry. Invalid headers use backoff.
+	// Saturate huge values so overflow cannot cause an immediate retry.
 	if strings.IndexFunc(header, func(r rune) bool { return r < '0' || r > '9' }) == -1 {
 		seconds, err := strconv.ParseUint(header, 10, 64)
 		if err != nil || seconds > uint64(math.MaxInt64/int64(time.Second)) {

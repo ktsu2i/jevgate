@@ -54,8 +54,6 @@ func TestParseOptions(t *testing.T) {
 			want: Options{Base: "main", Head: "HEAD", Format: FormatText, Threshold: 0.98, ThresholdSet: true},
 		},
 		{
-			// 0 allows every change, so it must survive as an explicit
-			// override rather than look like an omitted flag.
 			name: "threshold of zero is an override",
 			args: []string{"main", "HEAD", "--threshold", "0"},
 			want: Options{Base: "main", Head: "HEAD", Format: FormatText, Threshold: 0, ThresholdSet: true},
@@ -76,8 +74,6 @@ func TestParseOptions(t *testing.T) {
 			want: Options{Base: "main", Head: "HEAD", Format: FormatJSON},
 		},
 		{
-			// Git accepts revisions this CLI would otherwise read as flags;
-			// "--" is the only way to pass them.
 			name: "terminator protects revisions that look like flags",
 			args: []string{"--", "--base", "HEAD"},
 			want: Options{Base: "--base", Head: "HEAD", Format: FormatText},
@@ -111,7 +107,7 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
-		want string // a substring the diagnostic must explain
+		want string
 	}{
 		{
 			name: "no arguments",
@@ -129,8 +125,6 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 			want: "exactly 2 revisions",
 		},
 		{
-			// The forms are exclusive even when they agree, because the
-			// command would otherwise have two sources for one revision.
 			name: "positional and flag forms mixed",
 			args: []string{"main", "HEAD", "--base", "main"},
 			want: "cannot be combined",
@@ -274,9 +268,6 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 			got, err := ParseOptions(test.args)
 			require.Error(t, err, "ParseOptions(%q) = %+v, want an error", test.args, got)
 			require.ErrorContains(t, err, test.want, "ParseOptions(%q)", test.args)
-			// Rejected input must not leave a usable run behind: a caller
-			// that ignored the error would otherwise evaluate a change the
-			// user never asked for.
 			assert.Equal(t, Options{}, got, "ParseOptions(%q) returned options alongside an error", test.args)
 		})
 	}
@@ -285,8 +276,6 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 func TestParseOptionsHelpAndVersion(t *testing.T) {
 	t.Parallel()
 
-	// Help and version print and exit, so they are accepted with or without
-	// revisions and are not held to the rest of the validation.
 	tests := []struct {
 		args []string
 		want Options
@@ -315,9 +304,6 @@ func TestParseOptionsHelpAndVersion(t *testing.T) {
 func TestParseOptionsDefaults(t *testing.T) {
 	t.Parallel()
 
-	// The parser reports only what was given. Threshold resolution belongs to
-	// the configuration loader, which cannot tell an omitted flag from a
-	// deliberate 0 unless the parser keeps them apart.
 	got, err := ParseOptions([]string{"main", "HEAD"})
 	require.NoError(t, err)
 	assert.False(t, got.ThresholdSet, "ParseOptions without --threshold set ThresholdSet")
@@ -329,7 +315,6 @@ func TestParseOptionsDefaults(t *testing.T) {
 func TestParseOptionsDoesNotMutateArgs(t *testing.T) {
 	t.Parallel()
 
-	// Run passes os.Args[1:]; parsing must not reorder or consume it.
 	args := []string{"--threshold", "0.98", "main", "HEAD"}
 	want := []string{"--threshold", "0.98", "main", "HEAD"}
 

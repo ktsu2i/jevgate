@@ -12,47 +12,30 @@ import (
 // Change classifies what happened to one file between the two commits.
 type Change string
 
-// The changes Git reports between two commits.
 const (
 	Added    Change = "added"
 	Deleted  Change = "deleted"
 	Modified Change = "modified"
 	Renamed  Change = "renamed"
 	Copied   Change = "copied"
-	// TypeChanged is a change between a regular file, a symbolic link, and a
-	// submodule, which Git reports apart from a change of contents.
+	// TypeChanged changes the Git object type.
 	TypeChanged Change = "type changed"
 )
 
-// modeGitlink is the file mode Git prints for a submodule.
 const modeGitlink = "160000"
 
-// errMalformedOutput reports output from Git that this package cannot read.
-// It means the two commands that described one change disagreed, or that the
-// format changed; either way the change is not known in full, which is a
-// reason to stop rather than to report the part that was understood.
 var errMalformedOutput = errors.New("git produced output this tool cannot read")
 
 // File is one file changed between the two commits.
-//
-// The metadata comes from Git's raw diff and not from the patch: the patch is
-// written to be read by a person, and recovering the file list from its
-// headers would guess at something Git has already answered exactly.
 type File struct {
-	// Change is what happened to the file.
+	// Change identifies the operation.
 	Change Change
 
-	// OldPath and NewPath are the paths on each side of the change. An added
-	// file has no old path and a deleted file has no new path; a rename or a
-	// copy has two different ones.
+	// OldPath and NewPath identify each side of the change.
 	OldPath string
 	NewPath string
 
-	// OldMode and NewMode are the file modes as Git prints them: "100644" for
-	// a regular file, "100755" for an executable one, "120000" for a symbolic
-	// link, "160000" for a submodule, and "000000" for the side that does not
-	// exist. A change that only moves a file or only flips its mode carries
-	// no patch text, so the modes are how such a change is described at all.
+	// OldMode and NewMode are Git file modes.
 	OldMode string
 	NewMode string
 
@@ -60,8 +43,7 @@ type File struct {
 	Binary bool
 }
 
-// Path is the file's path in the head commit, or the path it had in the base
-// commit when it was deleted.
+// Path returns the surviving path, or the old path for a deletion.
 func (f *File) Path() string {
 	if f.NewPath != "" {
 		return f.NewPath
@@ -71,8 +53,7 @@ func (f *File) Path() string {
 
 // Diff is the complete change between two commits.
 type Diff struct {
-	// BaseID and HeadID are the commits that were compared, as object IDs.
-	// They are what was actually read, not the revisions someone typed.
+	// BaseID and HeadID are the compared commit object IDs.
 	BaseID string
 	HeadID string
 
@@ -83,14 +64,7 @@ type Diff struct {
 	Patch string
 }
 
-// Collect returns the change between two commits.
-//
-// Both arguments are object IDs from ResolveCommit rather than revisions: a
-// branch that moved between two of the commands below would otherwise let one
-// run compare two different pairs of commits. The comparison is direct,
-// between the two commits themselves, and never against their merge base:
-// what a reviewer approves is the difference from the base that was named,
-// not the difference from wherever the branches happened to part.
+// Collect returns the direct change between two resolved commits.
 func (r Repository) Collect(ctx context.Context, baseID, headID string) (Diff, error) {
 	if !isObjectID(baseID) {
 		return Diff{}, fmt.Errorf("%w %q: the base must be a resolved object ID", ErrRevision, baseID)
@@ -117,11 +91,6 @@ func (r Repository) Collect(ctx context.Context, baseID, headID string) (Diff, e
 	return Diff{BaseID: baseID, HeadID: headID, Files: files, Patch: patch}, nil
 }
 
-// collector runs the Git commands of one Collect call.
-//
-// It exists to keep the output budget in one place: the metadata and the
-// patch share a single limit, so every command has to account for what the
-// commands before it already spent.
 type collector struct {
 	root      string
 	baseID    string
@@ -135,34 +104,19 @@ func (c *collector) run(ctx context.Context, args ...string) ([]byte, error) {
 	return out, err
 }
 
-// diff runs one form of the comparison. The two commits are always passed the
-// same way, and a trailing "--" keeps an object ID from being read as a path.
 func (c *collector) diff(ctx context.Context, args ...string) ([]byte, error) {
 	return c.run(ctx, slices.Concat(diffArgs(c.headID), args, []string{c.baseID, c.headID, "--"})...)
 }
 
-// diffArgs are the options every comparison shares.
-//
-// They pin everything about the output that Git would otherwise take from
-// configuration or from the working tree. A gate whose answer depends on the
-// reviewer's ~/.gitconfig is not a gate, and a repository must not be able to
-// decide how much of its own change is shown.
 func diffArgs(headID string) []string {
 	return []string{
-		// Attributes decide whether a file has a textual diff at all.
-		// Reading them from the head commit keeps an edited or untracked
-		// .gitattributes out of a comparison of two commits.
+		// Pin attributes so the working tree cannot alter the reviewed diff.
 		"-c", "attr.tree=" + headID,
-		// Paths are written as they are rather than escaped, so the patch
-		// reads the same as the repository.
 		"-c", "core.quotePath=false",
 		"diff",
-		// No program that the repository configures may run while a diff is
-		// read. The change under review is data, never something to execute.
+		// The repository under review must not execute code.
 		"--no-ext-diff",
 		"--no-textconv",
-		// The rest is fixed so that the same two commits always produce the
-		// same bytes, whatever the repository or the reviewer configured.
 		"--no-color",
 		"--no-relative",
 		"--find-renames",
@@ -170,11 +124,6 @@ func diffArgs(headID string) []string {
 	}
 }
 
-// patchArgs are the options that shape the patch text.
-//
-// They are kept apart from the options every command shares because asking
-// Git for a number of context lines also asks it for a patch, and the
-// commands that read metadata must receive metadata alone.
 func patchArgs() []string {
 	return []string{
 		"--patch",
@@ -185,11 +134,6 @@ func patchArgs() []string {
 	}
 }
 
-// files lists what changed between the two commits.
-//
-// The list comes from Git's own description of the change and not from the
-// patch: a patch is written to be read by a person, and recovering the file
-// list from its headers would guess at something Git has already answered.
 func (c *collector) files(ctx context.Context) ([]File, error) {
 	raw, err := c.diff(ctx, "--raw", "-z")
 	if err != nil {
@@ -210,12 +154,8 @@ func (c *collector) files(ctx context.Context) ([]File, error) {
 	return applyNumstat(files, numstat)
 }
 
-// patch returns the unified diff, once the change is known to be one that can
-// be shown in full.
 func (c *collector) patch(ctx context.Context, files []File) (string, error) {
-	// The attributes are checked before the files themselves, because an
-	// attribute that hides a text diff makes Git report the file as binary,
-	// and "this file is binary" would then be the wrong explanation.
+	// Check attributes first so a hidden text diff is not misreported as binary.
 	if err := c.checkAttributes(ctx, files); err != nil {
 		return "", err
 	}
@@ -233,15 +173,12 @@ func (c *collector) patch(ctx context.Context, files []File) (string, error) {
 	return string(patch), nil
 }
 
-// Fields of the records Git prints for each changed file.
 const (
-	rawHeaderFields = 5 // old mode, new mode, old ID, new ID, status
-	numstatFields   = 3 // added, deleted, path
-	attrFields      = 3 // path, attribute, value
+	rawHeaderFields = 5
+	numstatFields   = 3
+	attrFields      = 3
 )
 
-// parseRaw reads the raw diff: a NUL terminated header per changed file,
-// followed by the one or two paths that header applies to.
 func parseRaw(data []byte) ([]File, error) {
 	fields := records(data)
 
@@ -267,7 +204,7 @@ func parseRaw(data []byte) ([]File, error) {
 			file.OldPath = paths[0]
 		case Renamed, Copied:
 			file.OldPath, file.NewPath = paths[0], paths[1]
-		default: // Modified and TypeChanged keep the one path they have.
+		default:
 			file.OldPath, file.NewPath = paths[0], paths[0]
 		}
 		files = append(files, file)
@@ -275,8 +212,6 @@ func parseRaw(data []byte) ([]File, error) {
 	return files, nil
 }
 
-// parseRawHeader reads one ":<old mode> <new mode> <old ID> <new ID> <status>"
-// header and reports how many paths belong to it.
 func parseRawHeader(header string) (File, int, error) {
 	body, isHeader := strings.CutPrefix(header, ":")
 	if !isHeader {
@@ -287,7 +222,6 @@ func parseRawHeader(header string) (File, int, error) {
 		return File{}, 0, fmt.Errorf("%w: the raw diff header %q has %d field(s), want %d", errMalformedOutput, header, len(fields), rawHeaderFields)
 	}
 
-	// A rename or a copy appends a similarity score to its status letter.
 	change, paths, err := changeOf(fields[rawHeaderFields-1][0])
 	if err != nil {
 		return File{}, 0, err
@@ -295,8 +229,6 @@ func parseRawHeader(header string) (File, int, error) {
 	return File{Change: change, OldMode: fields[0], NewMode: fields[1]}, paths, nil
 }
 
-// changeOf translates a raw diff status letter and reports how many paths it
-// is printed with.
 func changeOf(status byte) (Change, int, error) {
 	switch status {
 	case 'A':
@@ -316,11 +248,6 @@ func changeOf(status byte) (Change, int, error) {
 	}
 }
 
-// applyNumstat marks the files Git has no textual diff for.
-//
-// Whether a file is binary is Git's answer and not a guess from the patch
-// text. A file that one command listed and the other did not means the two
-// did not see the same change, which is a reason to stop.
 func applyNumstat(files []File, data []byte) ([]File, error) {
 	fields := records(data)
 
@@ -336,15 +263,12 @@ func applyNumstat(files []File, data []byte) ([]File, error) {
 
 		path := counts[2]
 		if path == "" {
-			// A rename or a copy prints its two paths as separate records.
 			if i+1 >= len(fields) {
 				return nil, fmt.Errorf("%w: the numstat record %q is missing its paths", errMalformedOutput, record)
 			}
 			path = fields[i+1]
 			i += 2
 		}
-		// Git prints a dash for each side it cannot count, which is how it
-		// says the file has no textual diff.
 		binary[path] = counts[0] == "-" && counts[1] == "-"
 	}
 
@@ -361,15 +285,6 @@ func applyNumstat(files []File, data []byte) ([]File, error) {
 	return files, nil
 }
 
-// checkAttributes rejects the files whose diff Git would not show in full.
-//
-// Disabling external diff drivers and textconv filters is not enough to know
-// that a patch is complete. A "-diff" attribute makes Git treat a text file
-// as binary, and a named diff driver can declare its files binary in the
-// user's configuration, both of which turn a real change into "Binary files
-// differ" without failing. The attributes are read from the head commit, the
-// same source the diff uses, so the answer describes the commits rather than
-// whatever the working tree currently holds.
 func (c *collector) checkAttributes(ctx context.Context, files []File) error {
 	paths := make([]string, 0, len(files))
 	seen := make(map[string]bool, len(files))
@@ -397,7 +312,6 @@ func (c *collector) checkAttributes(ctx context.Context, files []File) error {
 		path, value := fields[i], fields[i+2]
 		switch value {
 		case "unspecified", "set":
-			// No attribute, or one that asks for the ordinary text diff.
 		case "unset":
 			return fmt.Errorf("%w: the -diff attribute hides the contents of %q, so its change cannot be read", ErrUnsupported, path)
 		default:
@@ -407,12 +321,6 @@ func (c *collector) checkAttributes(ctx context.Context, files []File) error {
 	return nil
 }
 
-// checkSupported rejects the changes this tool has no honest answer for.
-//
-// A change that cannot be shown in full is not a change that may be approved,
-// so each of these ends the run. Changes that carry no patch text of their
-// own, such as a rename, a mode change, or an edited symbolic link, are not
-// among them: their metadata describes them completely and is sent on.
 func checkSupported(files []File) error {
 	for _, file := range files {
 		switch {
@@ -427,7 +335,6 @@ func checkSupported(files []File) error {
 	return nil
 }
 
-// records splits Git's NUL terminated output into its fields.
 func records(data []byte) []string {
 	text := strings.TrimSuffix(string(data), "\x00")
 	if text == "" {

@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// runCLI runs the CLI with args and returns the exit code and both streams.
 func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 
@@ -28,8 +27,6 @@ func TestExitCodes(t *testing.T) {
 func TestRunHelp(t *testing.T) {
 	t.Parallel()
 
-	// Help documents both revision forms and the exit codes, and it stays
-	// available when it follows the revisions.
 	sections := []string{
 		"jevgate <base> <head>",
 		"jevgate --base <base> --head <head>",
@@ -71,15 +68,10 @@ func TestRunVersion(t *testing.T) {
 func TestVersionDefaultsToDev(t *testing.T) {
 	t.Parallel()
 
-	// Release builds override this variable at link time; development builds
-	// must report "dev".
 	assert.Equal(t, "dev", version)
 }
 
-// This test is not parallel: t.Chdir and t.Setenv change state the whole
-// process shares, and the testing package panics if either is called from a
-// parallel test. The parallel tests resume only once this one has returned and
-// its cleanup has put the working directory and the environment back.
+// Process-wide state prevents this test from running in parallel.
 func TestRunHelpAndVersionNeedNoRepositoryOrAPIKey(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("JEV_API_KEY", "")
@@ -94,9 +86,6 @@ func TestRunHelpAndVersionNeedNoRepositoryOrAPIKey(t *testing.T) {
 func TestRunEvaluationIsNotImplemented(t *testing.T) {
 	t.Parallel()
 
-	// The evaluation path is wired up in a later task. It must fail with the
-	// error code instead of reporting an allowed AI approval, and it must keep
-	// stdout free of a decision so that --format json stays parsable.
 	for _, args := range [][]string{
 		{"main", "HEAD"},
 		{"--base", "main", "--head", "HEAD"},

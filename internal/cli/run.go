@@ -1,8 +1,3 @@
-// Package cli implements the jevgate command line interface.
-//
-// The package deliberately contains no os.Exit call: Run returns the process
-// exit code so that cmd/jevgate stays trivial and tests can inspect the result
-// without terminating the test binary.
 package cli
 
 import (
@@ -12,15 +7,12 @@ import (
 	"slices"
 )
 
-// Exit codes returned by Run. Exit code 1 is a normal negative decision rather
-// than a failure, so callers must keep it distinct from 2.
 const (
-	// ExitAllow reports that AI approval is allowed for the change. It is also
-	// returned by successful --help and --version runs.
+	// ExitAllow indicates that AI approval is allowed.
 	ExitAllow = 0
-	// ExitHumanReview reports that a human approval is still required.
+	// ExitHumanReview indicates that human approval is required.
 	ExitHumanReview = 1
-	// ExitError reports an input, configuration, or API error.
+	// ExitError indicates that no decision was made.
 	ExitError = 2
 )
 
@@ -63,9 +55,6 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return run(ctx, args, stdout, stderr)
 }
 
-// run carries the implementation of Run. Later tasks widen it with the config
-// loader, git, and Jev dependencies so that the exported signature stays
-// narrow and the dependencies remain replaceable in tests.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int { //nolint:revive,unparam // ctx is used once Jev is wired up.
 	switch {
 	case hasFlag(args, "-h", "--help"):
@@ -82,15 +71,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int { //n
 		return ExitError
 	}
 
-	// Evaluating a change is wired up in a later task. Until then the only
-	// honest answer is an error: a missing evaluation must never be reported as
-	// an allowed AI approval.
+	// Never allow approval until evaluation is implemented.
 	fmt.Fprintln(stderr, "jevgate: evaluating a change is not implemented yet; no decision was made")
 	return ExitError
 }
 
-// hasFlag reports whether one of names appears in args before a "--"
-// terminator. Arguments after "--" are revisions, never flags.
 func hasFlag(args []string, names ...string) bool {
 	for _, arg := range args {
 		if arg == "--" {
