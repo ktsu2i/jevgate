@@ -1,0 +1,82 @@
+name: test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+# Nothing in this workflow needs a token beyond reading the checkout. The grant
+# is empty here so that each job has to state what it needs for itself.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      # Every platform's result is wanted: a Windows-only failure must not hide
+      # whether macOS passed.
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The job only reads the checkout. Leaving the token in .git would
+          # hand it to every command that runs afterwards.
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # The toolchain comes from go.mod, so CI cannot drift from the
+          # version the module declares.
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build and run the CLI
+        # --version needs no repository, configuration, or API key, which makes
+        # it the one command that proves the binary links and starts anywhere.
+        run: go run ./cmd/jevgate --version
+
+  race:
+    name: race
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test with the race detector
+        # The tests call t.Parallel, so the detector has concurrent access to
+        # observe rather than only sequential runs.
+        run: go test -race ./...

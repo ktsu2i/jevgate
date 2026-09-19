@@ -1,0 +1,105 @@
+name: lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+# As in the test workflow: no job here needs more than reading the checkout,
+# and each one says so for itself.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # Pinned so that a new release cannot add findings to a commit that
+          # already passed. .golangci.yml is written against this version.
+          version: v2.12.2
+
+      - name: Check formatting
+        # golangci-lint run does not check formatting; fmt --diff reports it
+        # without rewriting the sources. The step above put the binary on PATH.
+        run: golangci-lint fmt --diff
+
+  workflows:
+    name: workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install actionlint and ghalint
+        # Both are Go programs, so the toolchain this job already has installs
+        # them at an exact version, verified against the Go checksum database.
+        env:
+          ACTIONLINT_VERSION: v1.7.12
+          GHALINT_VERSION: v1.5.6
+        run: |
+          go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+          go install "github.com/suzuki-shunsuke/ghalint/cmd/ghalint@${GHALINT_VERSION}"
+
+      - name: Run actionlint
+        # Checks the workflow schema, expressions, and the shell in run blocks
+        # through the shellcheck that the runner already provides.
+        run: actionlint -color
+
+      - name: Run ghalint
+        # Checks the policies actionlint does not: per-job permissions, full
+        # length commit SHAs, and how credentials may be passed around.
+        run: ghalint run
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          # Pinned for the same reason as golangci-lint: a new audit must not
+          # fail a commit that already passed.
+          version: 1.30.1
+          # This repository has no GitHub Advanced Security, so uploading SARIF
+          # would fail. Findings are reported as annotations instead.
+          advanced-security: false
+          annotations: true
