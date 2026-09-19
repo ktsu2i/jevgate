@@ -6,7 +6,7 @@ JevGate は、2 つの Git revision の差分について、人間による承�
 
 ## 現在の状態
 
-CLI は実装済みです。GitHub Action、レビュアー連携例、リリースバイナリの配布は今後のタスクで追加します。
+CLI は実装済みです。リリースバイナリの配布と、CLI を GitHub Actions から直接実行する公式 Workflow 例、レビュアー連携例は今後のタスクで追加します。専用の GitHub Action を配布する予定は現時点ではありません。
 
 ソースからビルドするには Go と Git が必要です。
 
@@ -14,6 +14,12 @@ CLI は実装済みです。GitHub Action、レビュアー連携例、リリー
 go build -o jevgate ./cmd/jevgate
 export JEV_API_KEY='your-api-key'
 ```
+
+## GitHub Actions での利用方針
+
+GitHub Actions 専用の `jevgate-action` は作らず、リリースした JevGate CLI を Workflow から固定バージョンで直接実行します。公式例では、PR の base / head SHA を明示して必要な履歴を checkout し、`JEV_API_KEY` を secret から渡します。
+
+単純なチェックでは CLI の終了コードをそのまま job の成否にできます。後続の承認ポリシーへ結果を渡す例では、終了コード `1` を正常な「人間レビューが必要」という判断として扱い、検証済みの JSON を job outputs に変換します。終了コード `2` は実行エラーとして失敗させます。実行可能な Workflow 例は、固定バージョンのリリースバイナリを公開した後に追加します。
 
 ## 使い方
 
