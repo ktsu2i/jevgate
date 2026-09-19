@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 )
 
 // Exit codes returned by Run. Exit code 1 is a normal negative decision rather
@@ -95,10 +96,8 @@ func hasFlag(args []string, names ...string) bool {
 		if arg == "--" {
 			return false
 		}
-		for _, name := range names {
-			if arg == name {
-				return true
-			}
+		if slices.Contains(names, arg) {
+			return true
 		}
 	}
 	return false
