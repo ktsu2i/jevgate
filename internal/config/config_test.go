@@ -4,7 +4,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -424,12 +423,6 @@ func TestLoadExplicitPath(t *testing.T) {
 func TestLoadUnreadableFile(t *testing.T) {
 	t.Parallel()
 
-	// Windows has no mode bits for os.Chmod to clear: it only toggles the read
-	// only attribute, which still permits reading. The case cannot be set up
-	// there, which is different from the loader failing it.
-	if runtime.GOOS == "windows" {
-		t.Skip("windows: os.Chmod cannot take read permission away")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permissions are not enforced")
 	}
