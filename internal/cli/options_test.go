@@ -1,9 +1,10 @@
-package cli
+package cli_test
 
 import (
 	"strings"
 	"testing"
 
+	"github.com/ktsu2i/jevgate/internal/cli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -11,12 +12,12 @@ import (
 func TestParseOptions(t *testing.T) {
 	t.Parallel()
 
-	positional := Options{Base: "main", Head: "HEAD", Format: FormatText}
+	positional := cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatText}
 
 	tests := []struct {
 		name string
 		args []string
-		want Options
+		want cli.Options
 	}{
 		{
 			name: "positional revisions",
@@ -36,32 +37,32 @@ func TestParseOptions(t *testing.T) {
 		{
 			name: "options after the revisions",
 			args: []string{"main", "HEAD", "--threshold", "0.98"},
-			want: Options{Base: "main", Head: "HEAD", Format: FormatText, Threshold: 0.98, ThresholdSet: true},
+			want: cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatText, Threshold: 0.98, ThresholdSet: true},
 		},
 		{
 			name: "options before the revisions",
 			args: []string{"--threshold", "0.98", "main", "HEAD"},
-			want: Options{Base: "main", Head: "HEAD", Format: FormatText, Threshold: 0.98, ThresholdSet: true},
+			want: cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatText, Threshold: 0.98, ThresholdSet: true},
 		},
 		{
 			name: "options around the revisions",
 			args: []string{"--format", "json", "main", "HEAD", "--config", "custom.yml"},
-			want: Options{Base: "main", Head: "HEAD", Format: FormatJSON, ConfigPath: "custom.yml"},
+			want: cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatJSON, ConfigPath: "custom.yml"},
 		},
 		{
 			name: "threshold with an equals sign",
 			args: []string{"main", "HEAD", "--threshold=0.98"},
-			want: Options{Base: "main", Head: "HEAD", Format: FormatText, Threshold: 0.98, ThresholdSet: true},
+			want: cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatText, Threshold: 0.98, ThresholdSet: true},
 		},
 		{
 			name: "threshold of zero is an override",
 			args: []string{"main", "HEAD", "--threshold", "0"},
-			want: Options{Base: "main", Head: "HEAD", Format: FormatText, Threshold: 0, ThresholdSet: true},
+			want: cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatText, Threshold: 0, ThresholdSet: true},
 		},
 		{
 			name: "threshold of one is an override",
 			args: []string{"main", "HEAD", "--threshold", "1"},
-			want: Options{Base: "main", Head: "HEAD", Format: FormatText, Threshold: 1, ThresholdSet: true},
+			want: cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatText, Threshold: 1, ThresholdSet: true},
 		},
 		{
 			name: "text format is the default",
@@ -71,22 +72,22 @@ func TestParseOptions(t *testing.T) {
 		{
 			name: "revisions after a terminator",
 			args: []string{"--format", "json", "--", "main", "HEAD"},
-			want: Options{Base: "main", Head: "HEAD", Format: FormatJSON},
+			want: cli.Options{Base: "main", Head: "HEAD", Format: cli.FormatJSON},
 		},
 		{
 			name: "terminator protects revisions that look like flags",
 			args: []string{"--", "--base", "HEAD"},
-			want: Options{Base: "--base", Head: "HEAD", Format: FormatText},
+			want: cli.Options{Base: "--base", Head: "HEAD", Format: cli.FormatText},
 		},
 		{
 			name: "any revision git resolves is accepted",
 			args: []string{"HEAD~1", "v1.2.3"},
-			want: Options{Base: "HEAD~1", Head: "v1.2.3", Format: FormatText},
+			want: cli.Options{Base: "HEAD~1", Head: "v1.2.3", Format: cli.FormatText},
 		},
 		{
 			name: "commit hashes are accepted",
 			args: []string{"abc123", "def456"},
-			want: Options{Base: "abc123", Head: "def456", Format: FormatText},
+			want: cli.Options{Base: "abc123", Head: "def456", Format: cli.FormatText},
 		},
 	}
 
@@ -94,9 +95,9 @@ func TestParseOptions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := ParseOptions(test.args)
-			require.NoError(t, err, "ParseOptions(%q), want %+v", test.args, test.want)
-			assert.Equal(t, test.want, got, "ParseOptions(%q)", test.args)
+			got, err := cli.ParseOptions(test.args)
+			require.NoError(t, err, "cli.ParseOptions(%q), want %+v", test.args, test.want)
+			assert.Equal(t, test.want, got, "cli.ParseOptions(%q)", test.args)
 		})
 	}
 }
@@ -265,10 +266,10 @@ func TestParseOptionsRejectsInvalidInput(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := ParseOptions(test.args)
-			require.Error(t, err, "ParseOptions(%q) = %+v, want an error", test.args, got)
-			require.ErrorContains(t, err, test.want, "ParseOptions(%q)", test.args)
-			assert.Equal(t, Options{}, got, "ParseOptions(%q) returned options alongside an error", test.args)
+			got, err := cli.ParseOptions(test.args)
+			require.Error(t, err, "cli.ParseOptions(%q) = %+v, want an error", test.args, got)
+			require.ErrorContains(t, err, test.want, "cli.ParseOptions(%q)", test.args)
+			assert.Equal(t, cli.Options{}, got, "cli.ParseOptions(%q) returned options alongside an error", test.args)
 		})
 	}
 }
@@ -278,23 +279,23 @@ func TestParseOptionsHelpAndVersion(t *testing.T) {
 
 	tests := []struct {
 		args []string
-		want Options
+		want cli.Options
 	}{
-		{args: []string{"--help"}, want: Options{Help: true}},
-		{args: []string{"-h"}, want: Options{Help: true}},
-		{args: []string{"main", "HEAD", "--help"}, want: Options{Help: true}},
-		{args: []string{"--help", "--format", "yaml"}, want: Options{Help: true}},
-		{args: []string{"--version"}, want: Options{Version: true}},
-		{args: []string{"main", "--version"}, want: Options{Version: true}},
-		{args: []string{"--help", "--version"}, want: Options{Help: true}},
-		{args: []string{"--version", "--help"}, want: Options{Help: true}},
+		{args: []string{"--help"}, want: cli.Options{Help: true}},
+		{args: []string{"-h"}, want: cli.Options{Help: true}},
+		{args: []string{"main", "HEAD", "--help"}, want: cli.Options{Help: true}},
+		{args: []string{"--help", "--format", "yaml"}, want: cli.Options{Help: true}},
+		{args: []string{"--version"}, want: cli.Options{Version: true}},
+		{args: []string{"main", "--version"}, want: cli.Options{Version: true}},
+		{args: []string{"--help", "--version"}, want: cli.Options{Help: true}},
+		{args: []string{"--version", "--help"}, want: cli.Options{Help: true}},
 	}
 
 	for _, test := range tests {
 		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
 			t.Parallel()
 
-			got, err := ParseOptions(test.args)
+			got, err := cli.ParseOptions(test.args)
 			require.NoError(t, err, "want %+v", test.want)
 			assert.Equal(t, test.want, got)
 		})
@@ -304,12 +305,12 @@ func TestParseOptionsHelpAndVersion(t *testing.T) {
 func TestParseOptionsDefaults(t *testing.T) {
 	t.Parallel()
 
-	got, err := ParseOptions([]string{"main", "HEAD"})
+	got, err := cli.ParseOptions([]string{"main", "HEAD"})
 	require.NoError(t, err)
-	assert.False(t, got.ThresholdSet, "ParseOptions without --threshold set ThresholdSet")
-	assert.Zero(t, got.Threshold, "ParseOptions without --threshold set a threshold")
-	assert.Empty(t, got.ConfigPath, "ParseOptions without --config set a path")
-	assert.Equal(t, FormatText, got.Format, "ParseOptions without --format")
+	assert.False(t, got.ThresholdSet, "cli.ParseOptions without --threshold set ThresholdSet")
+	assert.Zero(t, got.Threshold, "cli.ParseOptions without --threshold set a threshold")
+	assert.Empty(t, got.ConfigPath, "cli.ParseOptions without --config set a path")
+	assert.Equal(t, cli.FormatText, got.Format, "cli.ParseOptions without --format")
 }
 
 func TestParseOptionsDoesNotMutateArgs(t *testing.T) {
@@ -318,7 +319,7 @@ func TestParseOptionsDoesNotMutateArgs(t *testing.T) {
 	args := []string{"--threshold", "0.98", "main", "HEAD"}
 	want := []string{"--threshold", "0.98", "main", "HEAD"}
 
-	_, err := ParseOptions(args)
+	_, err := cli.ParseOptions(args)
 	require.NoError(t, err)
-	assert.Equal(t, want, args, "ParseOptions modified its arguments")
+	assert.Equal(t, want, args, "cli.ParseOptions modified its arguments")
 }

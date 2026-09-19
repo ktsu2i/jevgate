@@ -1,4 +1,4 @@
-package git
+package git_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ktsu2i/jevgate/internal/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,11 +97,11 @@ func (r *repo) commitIndex(message string) string {
 	return strings.TrimSpace(r.git("rev-parse", "HEAD"))
 }
 
-func (r *repo) discover() Repository {
+func (r *repo) discover() git.Repository {
 	r.t.Helper()
 
-	repository, err := Discover(r.t.Context(), r.root)
-	require.NoError(r.t, err, "Discover")
+	repository, err := git.Discover(r.t.Context(), r.root)
+	require.NoError(r.t, err, "git.Discover")
 	return repository
 }
 
@@ -126,7 +127,7 @@ func TestDiscover(t *testing.T) {
 		t.Run(dir, func(t *testing.T) {
 			t.Parallel()
 
-			repository, err := Discover(t.Context(), filepath.Join(r.root, dir))
+			repository, err := git.Discover(t.Context(), filepath.Join(r.root, dir))
 			require.NoError(t, err)
 			assert.Equal(t, r.root, repository.Root(), "the repository root is the same from every directory in it")
 		})
@@ -144,12 +145,12 @@ func TestDiscoverRejectsNonRepository(t *testing.T) {
 		{
 			name: "outside a repository",
 			cwd:  func(t *testing.T) string { t.Helper(); return resolve(t, t.TempDir()) },
-			want: ErrNotRepository,
+			want: git.ErrNotRepository,
 		},
 		{
 			name: "directory that does not exist",
 			cwd:  func(t *testing.T) string { t.Helper(); return filepath.Join(t.TempDir(), "missing") },
-			want: ErrNotRepository,
+			want: git.ErrNotRepository,
 		},
 	}
 
@@ -157,7 +158,7 @@ func TestDiscoverRejectsNonRepository(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := Discover(t.Context(), test.cwd(t))
+			_, err := git.Discover(t.Context(), test.cwd(t))
 			require.ErrorIs(t, err, test.want)
 		})
 	}
@@ -166,7 +167,7 @@ func TestDiscoverRejectsNonRepository(t *testing.T) {
 func TestDiscoverWithoutWorkingDirectory(t *testing.T) {
 	t.Parallel()
 
-	_, err := Discover(t.Context(), "")
+	_, err := git.Discover(t.Context(), "")
 	require.Error(t, err, "an empty working directory must not be answered with the process's own")
 }
 
@@ -205,7 +206,7 @@ func TestResolveCommit(t *testing.T) {
 			got, err := repository.ResolveCommit(t.Context(), test.revision)
 			require.NoError(t, err)
 			assert.Equal(t, test.want, got)
-			assert.True(t, isObjectID(got), "%q is a complete object ID", got)
+			assert.Regexp(t, `^[0-9a-f]{40}$|^[0-9a-f]{64}$`, got, "%q is a complete object ID", got)
 		})
 	}
 }
@@ -237,7 +238,7 @@ func TestResolveCommitRejects(t *testing.T) {
 			t.Parallel()
 
 			id, err := repository.ResolveCommit(t.Context(), test.revision)
-			require.ErrorIs(t, err, ErrRevision)
+			require.ErrorIs(t, err, git.ErrRevision)
 			assert.Empty(t, id)
 		})
 	}
@@ -260,7 +261,7 @@ func TestResolveCommitInShallowClone(t *testing.T) {
 	assert.Equal(t, head, got)
 
 	_, err = repository.ResolveCommit(t.Context(), "HEAD~1")
-	require.ErrorIs(t, err, ErrRevision)
+	require.ErrorIs(t, err, git.ErrRevision)
 	assert.Contains(t, err.Error(), "fetch")
 }
 
@@ -282,33 +283,7 @@ func TestResolveCommitRespectsCancellation(t *testing.T) {
 func TestUndiscoveredRepository(t *testing.T) {
 	t.Parallel()
 
-	var repository Repository
+	var repository git.Repository
 	_, err := repository.ResolveCommit(t.Context(), "HEAD")
 	require.Error(t, err, "a repository with no root must not run Git in the process's own directory")
-}
-
-func TestIsObjectID(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		id   string
-		want bool
-	}{
-		{name: "SHA-1", id: strings.Repeat("a1", 20), want: true},
-		{name: "SHA-256", id: strings.Repeat("b2", 32), want: true},
-		{name: "abbreviated", id: strings.Repeat("a", 7), want: false},
-		{name: "empty", id: "", want: false},
-		{name: "uppercase", id: strings.Repeat("A", 40), want: false},
-		{name: "not hexadecimal", id: strings.Repeat("g", 40), want: false},
-		{name: "revision", id: "HEAD", want: false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, test.want, isObjectID(test.id))
-		})
-	}
 }

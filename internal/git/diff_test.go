@@ -1,4 +1,4 @@
-package git
+package git_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ktsu2i/jevgate/internal/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +28,7 @@ func writeBase(r *repo) {
 	r.symlink("kept.txt", "link")
 }
 
-func (r *repo) collect(base, head string) (Diff, error) {
+func (r *repo) collect(base, head string) (git.Diff, error) {
 	r.t.Helper()
 
 	return r.discover().Collect(r.t.Context(), base, head)
@@ -39,13 +40,13 @@ func TestCollect(t *testing.T) {
 	tests := []struct {
 		name  string
 		head  func(r *repo)
-		want  []File
+		want  []git.File
 		patch []string
 	}{
 		{
 			name: "added file",
 			head: func(r *repo) { r.write("added.txt", "brand new\n") },
-			want: []File{{Change: Added, NewPath: "added.txt", OldMode: modeNone, NewMode: modeRegular}},
+			want: []git.File{{Change: git.Added, NewPath: "added.txt", OldMode: modeNone, NewMode: modeRegular}},
 			patch: []string{
 				"new file mode 100644",
 				"+brand new",
@@ -54,19 +55,19 @@ func TestCollect(t *testing.T) {
 		{
 			name:  "added empty file",
 			head:  func(r *repo) { r.write("empty.txt", "") },
-			want:  []File{{Change: Added, NewPath: "empty.txt", OldMode: modeNone, NewMode: modeRegular}},
+			want:  []git.File{{Change: git.Added, NewPath: "empty.txt", OldMode: modeNone, NewMode: modeRegular}},
 			patch: []string{"new file mode 100644"},
 		},
 		{
 			name:  "deleted file",
 			head:  func(r *repo) { r.remove("removed.txt") },
-			want:  []File{{Change: Deleted, OldPath: "removed.txt", OldMode: modeRegular, NewMode: modeNone}},
+			want:  []git.File{{Change: git.Deleted, OldPath: "removed.txt", OldMode: modeRegular, NewMode: modeNone}},
 			patch: []string{"deleted file mode 100644", "-goes away"},
 		},
 		{
 			name: "modified file",
 			head: func(r *repo) { r.write("edited.txt", "one\nchanged\nthree\n") },
-			want: []File{{Change: Modified, OldPath: "edited.txt", NewPath: "edited.txt", OldMode: modeRegular, NewMode: modeRegular}},
+			want: []git.File{{Change: git.Modified, OldPath: "edited.txt", NewPath: "edited.txt", OldMode: modeRegular, NewMode: modeRegular}},
 			patch: []string{
 				"-two",
 				"+changed",
@@ -75,19 +76,19 @@ func TestCollect(t *testing.T) {
 		{
 			name:  "whitespace only change",
 			head:  func(r *repo) { r.write("edited.txt", "one \ntwo\nthree\n") },
-			want:  []File{{Change: Modified, OldPath: "edited.txt", NewPath: "edited.txt", OldMode: modeRegular, NewMode: modeRegular}},
+			want:  []git.File{{Change: git.Modified, OldPath: "edited.txt", NewPath: "edited.txt", OldMode: modeRegular, NewMode: modeRegular}},
 			patch: []string{"-one\n", "+one \n"},
 		},
 		{
 			name:  "renamed file",
 			head:  func(r *repo) { r.git("mv", "moved.txt", "renamed.txt") },
-			want:  []File{{Change: Renamed, OldPath: "moved.txt", NewPath: "renamed.txt", OldMode: modeRegular, NewMode: modeRegular}},
+			want:  []git.File{{Change: git.Renamed, OldPath: "moved.txt", NewPath: "renamed.txt", OldMode: modeRegular, NewMode: modeRegular}},
 			patch: []string{"rename from moved.txt", "rename to renamed.txt"},
 		},
 		{
 			name:  "mode only change",
 			head:  func(r *repo) { r.chmod("mode.txt", 0o700) },
-			want:  []File{{Change: Modified, OldPath: "mode.txt", NewPath: "mode.txt", OldMode: modeRegular, NewMode: modeExecutable}},
+			want:  []git.File{{Change: git.Modified, OldPath: "mode.txt", NewPath: "mode.txt", OldMode: modeRegular, NewMode: modeExecutable}},
 			patch: []string{"old mode 100644", "new mode 100755"},
 		},
 		{
@@ -96,7 +97,7 @@ func TestCollect(t *testing.T) {
 				r.remove("link")
 				r.symlink("edited.txt", "link")
 			},
-			want:  []File{{Change: Modified, OldPath: "link", NewPath: "link", OldMode: modeSymlink, NewMode: modeSymlink}},
+			want:  []git.File{{Change: git.Modified, OldPath: "link", NewPath: "link", OldMode: modeSymlink, NewMode: modeSymlink}},
 			patch: []string{"-kept.txt", "+edited.txt"},
 		},
 		{
@@ -105,7 +106,7 @@ func TestCollect(t *testing.T) {
 				r.remove("kept.txt")
 				r.symlink("edited.txt", "kept.txt")
 			},
-			want:  []File{{Change: TypeChanged, OldPath: "kept.txt", NewPath: "kept.txt", OldMode: modeRegular, NewMode: modeSymlink}},
+			want:  []git.File{{Change: git.TypeChanged, OldPath: "kept.txt", NewPath: "kept.txt", OldMode: modeRegular, NewMode: modeSymlink}},
 			patch: []string{"deleted file mode 100644", "new file mode 120000"},
 		},
 		{
@@ -115,10 +116,10 @@ func TestCollect(t *testing.T) {
 				r.remove("removed.txt")
 				r.write("edited.txt", "one\nchanged\nthree\n")
 			},
-			want: []File{
-				{Change: Added, NewPath: "added.txt", OldMode: modeNone, NewMode: modeRegular},
-				{Change: Modified, OldPath: "edited.txt", NewPath: "edited.txt", OldMode: modeRegular, NewMode: modeRegular},
-				{Change: Deleted, OldPath: "removed.txt", OldMode: modeRegular, NewMode: modeNone},
+			want: []git.File{
+				{Change: git.Added, NewPath: "added.txt", OldMode: modeNone, NewMode: modeRegular},
+				{Change: git.Modified, OldPath: "edited.txt", NewPath: "edited.txt", OldMode: modeRegular, NewMode: modeRegular},
+				{Change: git.Deleted, OldPath: "removed.txt", OldMode: modeRegular, NewMode: modeNone},
 			},
 			patch: []string{"+brand new", "+changed", "-goes away"},
 		},
@@ -172,7 +173,7 @@ func TestCollectReadsAwkwardPaths(t *testing.T) {
 
 	got := make([]string, 0, len(diff.Files))
 	for _, file := range diff.Files {
-		assert.Equal(t, Added, file.Change)
+		assert.Equal(t, git.Added, file.Change)
 		got = append(got, file.NewPath)
 	}
 	assert.ElementsMatch(t, paths, got)
@@ -194,9 +195,9 @@ func TestCollectComparesTheCommitsDirectly(t *testing.T) {
 	diff, err := r.collect(base, head)
 	require.NoError(t, err)
 
-	assert.Equal(t, []File{
-		{Change: Deleted, OldPath: "base-only.txt", OldMode: modeRegular, NewMode: modeNone},
-		{Change: Added, NewPath: "head-only.txt", OldMode: modeNone, NewMode: modeRegular},
+	assert.Equal(t, []git.File{
+		{Change: git.Deleted, OldPath: "base-only.txt", OldMode: modeRegular, NewMode: modeNone},
+		{Change: git.Added, NewPath: "head-only.txt", OldMode: modeNone, NewMode: modeRegular},
 	}, diff.Files)
 }
 
@@ -218,8 +219,8 @@ func TestCollectIgnoresTheWorkingTree(t *testing.T) {
 	diff, err := r.collect(base, head)
 	require.NoError(t, err)
 
-	assert.Equal(t, []File{
-		{Change: Modified, OldPath: "committed.txt", NewPath: "committed.txt", OldMode: modeRegular, NewMode: modeRegular},
+	assert.Equal(t, []git.File{
+		{Change: git.Modified, OldPath: "committed.txt", NewPath: "committed.txt", OldMode: modeRegular, NewMode: modeRegular},
 	}, diff.Files)
 	assert.Contains(t, diff.Patch, "+two")
 	assert.NotContains(t, diff.Patch, "working tree")
@@ -321,7 +322,7 @@ func TestCollectRejectsIncompleteDiffs(t *testing.T) {
 			head := r.commit("head")
 
 			_, err := r.collect(base, head)
-			require.ErrorIs(t, err, ErrUnsupported)
+			require.ErrorIs(t, err, git.ErrUnsupported)
 			assert.Contains(t, err.Error(), test.want)
 			assert.Contains(t, err.Error(), "secret.txt")
 			assertNotRun(t, sentinel)
@@ -375,7 +376,7 @@ func TestCollectRejectsUnevaluableChanges(t *testing.T) {
 			head := test.head(r)
 
 			_, err := r.collect(base, head)
-			require.ErrorIs(t, err, ErrUnsupported)
+			require.ErrorIs(t, err, git.ErrUnsupported)
 			assert.Contains(t, err.Error(), test.want)
 		})
 	}
@@ -391,7 +392,7 @@ func TestCollectRejectsIdenticalCommits(t *testing.T) {
 	head := strings.TrimSpace(r.git("rev-parse", "HEAD"))
 
 	_, err := r.collect(base, head)
-	require.ErrorIs(t, err, ErrNoChanges)
+	require.ErrorIs(t, err, git.ErrNoChanges)
 }
 
 func TestCollectRejectsUnresolvedRevisions(t *testing.T) {
@@ -419,7 +420,7 @@ func TestCollectRejectsUnresolvedRevisions(t *testing.T) {
 			t.Parallel()
 
 			_, err := repository.Collect(t.Context(), test.base, test.head)
-			require.ErrorIs(t, err, ErrRevision)
+			require.ErrorIs(t, err, git.ErrRevision)
 		})
 	}
 }
@@ -434,7 +435,7 @@ func TestCollectRejectsOversizedChanges(t *testing.T) {
 	head := r.commit("head")
 
 	_, err := r.collect(base, head)
-	require.ErrorIs(t, err, ErrTooLarge)
+	require.ErrorIs(t, err, git.ErrTooLarge)
 }
 
 func TestCollectRespectsCancellation(t *testing.T) {
@@ -451,52 +452,4 @@ func TestCollectRespectsCancellation(t *testing.T) {
 
 	_, err := r.discover().Collect(ctx, base, head)
 	require.ErrorIs(t, err, context.Canceled)
-}
-
-func TestRecords(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		data string
-		want []string
-	}{
-		{name: "empty", data: "", want: nil},
-		{name: "one record", data: "a\x00", want: []string{"a"}},
-		{name: "several records", data: "a\x00b\x00", want: []string{"a", "b"}},
-		{name: "empty record", data: "a\x00\x00b\x00", want: []string{"a", "", "b"}},
-		{name: "no terminator", data: "a", want: []string{"a"}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, test.want, records([]byte(test.data)))
-		})
-	}
-}
-
-func TestParseRawRejectsMalformedOutput(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		data string
-	}{
-		{name: "no header", data: "a.txt\x00"},
-		{name: "short header", data: ":100644 100644 M\x00a.txt\x00"},
-		{name: "missing path", data: ":100644 100644 aaaaaaa bbbbbbb M\x00"},
-		{name: "missing second path", data: ":100644 100644 aaaaaaa bbbbbbb R100\x00old.txt\x00"},
-		{name: "unmerged", data: ":100644 100644 aaaaaaa bbbbbbb U\x00a.txt\x00"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			_, err := parseRaw([]byte(test.data))
-			require.Error(t, err, "output that cannot be read must not become a partial file list")
-		})
-	}
 }

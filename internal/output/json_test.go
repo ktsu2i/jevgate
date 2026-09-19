@@ -1,4 +1,4 @@
-package output
+package output_test
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ktsu2i/jevgate/internal/gate"
+	"github.com/ktsu2i/jevgate/internal/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +23,7 @@ func TestWriteJSON(t *testing.T) {
 	}
 	for _, result := range tests {
 		var encoded bytes.Buffer
-		require.NoError(t, WriteJSON(&encoded, result))
+		require.NoError(t, output.WriteJSON(&encoded, result))
 		assert.Equal(t, byte('\n'), encoded.Bytes()[encoded.Len()-1])
 
 		var got map[string]any
@@ -44,7 +45,7 @@ func TestWriteJSONRejectsInvalidResultBeforeWriting(t *testing.T) {
 		{Confidence: 0.5, Threshold: math.Inf(1)},
 	} {
 		writer := &recordingWriter{}
-		err := WriteJSON(writer, result)
+		err := output.WriteJSON(writer, result)
 		require.Error(t, err)
 		assert.Equal(t, 0, writer.calls)
 	}
@@ -54,13 +55,13 @@ func TestWriteJSONReturnsWriterError(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("write sentinel")
-	err := WriteJSON(errorWriter{err: want}, gate.Result{Confidence: 0.5, Threshold: 0.95})
+	err := output.WriteJSON(errorWriter{err: want}, gate.Result{Confidence: 0.5, Threshold: 0.95})
 	require.ErrorIs(t, err, want)
 }
 
 func TestWriteJSONRejectsShortWrite(t *testing.T) {
 	t.Parallel()
 
-	err := WriteJSON(shortWriter{}, gate.Result{Confidence: 0.5, Threshold: 0.95})
+	err := output.WriteJSON(shortWriter{}, gate.Result{Confidence: 0.5, Threshold: 0.95})
 	require.ErrorIs(t, err, io.ErrShortWrite)
 }

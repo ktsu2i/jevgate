@@ -1,10 +1,11 @@
-package cli
+package cli_test
 
 import (
 	"bytes"
 	"context"
 	"testing"
 
+	"github.com/ktsu2i/jevgate/internal/cli"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -12,16 +13,16 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 
 	var out, errOut bytes.Buffer
-	code = Run(context.Background(), args, &out, &errOut)
+	code = cli.Run(context.Background(), args, &out, &errOut)
 	return code, out.String(), errOut.String()
 }
 
 func TestExitCodes(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, 0, ExitAllow, "the allow exit code changed")
-	assert.Equal(t, 1, ExitHumanReview, "the human review exit code changed")
-	assert.Equal(t, 2, ExitError, "the error exit code changed")
+	assert.Equal(t, 0, cli.ExitAllow, "the allow exit code changed")
+	assert.Equal(t, 1, cli.ExitHumanReview, "the human review exit code changed")
+	assert.Equal(t, 2, cli.ExitError, "the error exit code changed")
 }
 
 func TestRunHelp(t *testing.T) {
@@ -48,10 +49,10 @@ func TestRunHelp(t *testing.T) {
 		{"--help", "--version"},
 	} {
 		code, stdout, stderr := runCLI(t, args...)
-		assert.Equal(t, ExitAllow, code, "Run(%q) (stderr: %q)", args, stderr)
-		assert.Empty(t, stderr, "Run(%q) wrote to stderr", args)
+		assert.Equal(t, cli.ExitAllow, code, "cli.Run(%q) (stderr: %q)", args, stderr)
+		assert.Empty(t, stderr, "cli.Run(%q) wrote to stderr", args)
 		for _, section := range sections {
-			assert.Contains(t, stdout, section, "Run(%q) help output", args)
+			assert.Contains(t, stdout, section, "cli.Run(%q) help output", args)
 		}
 	}
 }
@@ -60,15 +61,9 @@ func TestRunVersion(t *testing.T) {
 	t.Parallel()
 
 	code, stdout, stderr := runCLI(t, "--version")
-	assert.Equal(t, ExitAllow, code, "Run(--version) (stderr: %q)", stderr)
-	assert.Empty(t, stderr, "Run(--version) wrote to stderr")
-	assert.Equal(t, "jevgate "+version+"\n", stdout, "Run(--version) stdout")
-}
-
-func TestVersionDefaultsToDev(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, "dev", version)
+	assert.Equal(t, cli.ExitAllow, code, "cli.Run(--version) (stderr: %q)", stderr)
+	assert.Empty(t, stderr, "cli.Run(--version) wrote to stderr")
+	assert.Equal(t, "jevgate dev\n", stdout, "cli.Run(--version) stdout")
 }
 
 // Process-wide state prevents this test from running in parallel.
@@ -78,8 +73,8 @@ func TestRunHelpAndVersionNeedNoRepositoryOrAPIKey(t *testing.T) {
 
 	for _, args := range [][]string{{"--help"}, {"--version"}} {
 		code, stdout, stderr := runCLI(t, args...)
-		assert.Equal(t, ExitAllow, code, "Run(%q) outside a repository (stderr: %q)", args, stderr)
-		assert.NotEmpty(t, stdout, "Run(%q) outside a repository wrote nothing to stdout", args)
+		assert.Equal(t, cli.ExitAllow, code, "cli.Run(%q) outside a repository (stderr: %q)", args, stderr)
+		assert.NotEmpty(t, stdout, "cli.Run(%q) outside a repository wrote nothing to stdout", args)
 	}
 }
 
@@ -93,10 +88,10 @@ func TestRunEvaluationIsNotImplemented(t *testing.T) {
 		{"--", "--help"},
 	} {
 		code, stdout, stderr := runCLI(t, args...)
-		assert.Equal(t, ExitError, code, "Run(%q) (stdout: %q)", args, stdout)
-		assert.Empty(t, stdout, "Run(%q) wrote to stdout", args)
-		assert.Contains(t, stderr, "not implemented", "Run(%q) stderr, want a diagnostic about the unimplemented path", args)
-		assert.NotContains(t, stderr, "ALLOW", "Run(%q) stderr reports a decision", args)
+		assert.Equal(t, cli.ExitError, code, "cli.Run(%q) (stdout: %q)", args, stdout)
+		assert.Empty(t, stdout, "cli.Run(%q) wrote to stdout", args)
+		assert.Contains(t, stderr, "not implemented", "cli.Run(%q) stderr, want a diagnostic about the unimplemented path", args)
+		assert.NotContains(t, stderr, "ALLOW", "cli.Run(%q) stderr reports a decision", args)
 	}
 }
 
@@ -104,7 +99,7 @@ func TestRunWithoutArguments(t *testing.T) {
 	t.Parallel()
 
 	code, stdout, stderr := runCLI(t)
-	assert.Equal(t, ExitError, code, "Run() (stdout: %q)", stdout)
-	assert.Empty(t, stdout, "Run() wrote to stdout")
-	assert.Contains(t, stderr, "required", "Run() stderr, want a diagnostic about the missing revisions")
+	assert.Equal(t, cli.ExitError, code, "cli.Run() (stdout: %q)", stdout)
+	assert.Empty(t, stdout, "cli.Run() wrote to stdout")
+	assert.Contains(t, stderr, "required", "cli.Run() stderr, want a diagnostic about the missing revisions")
 }

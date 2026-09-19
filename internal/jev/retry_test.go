@@ -1,9 +1,9 @@
-package jev
+package jev_test
 
 import (
 	"context"
-	"math"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,28 +11,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRetryAfter(t *testing.T) {
+func TestAssessRetryBeyondDeadline(t *testing.T) {
 	t.Parallel()
-	now := time.Date(2026, 9, 19, 1, 0, 0, 0, time.UTC)
-	for _, tt := range []struct {
-		header string
-		want   time.Duration
-	}{
-		{"", 0}, {"0", 0}, {" 2 ", 2 * time.Second},
-		{"-1", 0}, {"1.5", 0}, {"invalid", 0},
-		{now.Add(3 * time.Second).Format(http.TimeFormat), 3 * time.Second},
-		{now.Add(-3 * time.Second).Format(http.TimeFormat), 0},
-		{"999999999999999999999999999999", time.Duration(math.MaxInt64)},
-		{"9223372037", time.Duration(math.MaxInt64)},
-	} {
-		assert.Equal(t, tt.want, retryAfter(tt.header, now), tt.header)
+	for _, header := range []string{"100", "9999999999999999999999999999"} {
+		t.Run(header, func(t *testing.T) {
+			t.Parallel()
+			var calls atomic.Int32
+			client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Retry-After", header)
+				w.WriteHeader(529)
+			})
+			_, err := client.Assess(context.Background(), testDiff(), "")
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.ErrorContains(t, err, "HTTP 529")
+			assert.EqualValues(t, 1, calls.Load())
+		})
 	}
 }
 
-func TestWaitRetry(t *testing.T) {
+func TestAssessCancellationDuringRetryWait(t *testing.T) {
 	t.Parallel()
-	require.NoError(t, waitRetry(context.Background(), time.Millisecond))
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls atomic.Int32
+	waiting := make(chan struct{})
+	client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusTooManyRequests)
+		close(waiting)
+	})
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Assess(ctx, testDiff(), "")
+		done <- err
+	}()
+	select {
+	case <-waiting:
+	case <-time.After(3 * time.Second):
+		t.Fatal("did not reach retry wait")
+	}
 	cancel()
-	require.ErrorIs(t, waitRetry(ctx, time.Hour), context.Canceled)
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("retry wait ignored cancellation")
+	}
+	assert.EqualValues(t, 1, calls.Load())
 }

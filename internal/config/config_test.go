@@ -1,4 +1,4 @@
-package config
+package config_test
 
 import (
 	"math"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ktsu2i/jevgate/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +17,7 @@ func repoWith(t *testing.T, content ...string) string {
 
 	root := t.TempDir()
 	if len(content) > 0 {
-		write(t, filepath.Join(root, FileName), content[0])
+		write(t, filepath.Join(root, config.FileName), content[0])
 	}
 	return root
 }
@@ -33,57 +34,57 @@ func TestLoadFile(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    Config
+		want    config.Config
 	}{
 		{
 			name:    "empty file",
 			content: "",
-			want:    Config{Threshold: DefaultThreshold},
+			want:    config.Config{Threshold: config.DefaultThreshold},
 		},
 		{
 			name:    "comments only",
 			content: "# nothing configured yet\n",
-			want:    Config{Threshold: DefaultThreshold},
+			want:    config.Config{Threshold: config.DefaultThreshold},
 		},
 		{
 			name:    "empty mapping",
 			content: "{}\n",
-			want:    Config{Threshold: DefaultThreshold},
+			want:    config.Config{Threshold: config.DefaultThreshold},
 		},
 		{
 			name:    "threshold only",
 			content: "threshold: 0.98\n",
-			want:    Config{Threshold: 0.98},
+			want:    config.Config{Threshold: 0.98},
 		},
 		{
 			name:    "threshold of zero",
 			content: "threshold: 0\n",
-			want:    Config{Threshold: 0},
+			want:    config.Config{Threshold: 0},
 		},
 		{
 			name:    "threshold of one",
 			content: "threshold: 1\n",
-			want:    Config{Threshold: 1},
+			want:    config.Config{Threshold: 1},
 		},
 		{
 			name:    "context only",
 			content: "context: internal/ holds application code\n",
-			want:    Config{Threshold: DefaultThreshold, Context: "internal/ holds application code"},
+			want:    config.Config{Threshold: config.DefaultThreshold, Context: "internal/ holds application code"},
 		},
 		{
 			name:    "threshold and context",
 			content: "threshold: 0.9\ncontext: docs/ holds documentation\n",
-			want:    Config{Threshold: 0.9, Context: "docs/ holds documentation"},
+			want:    config.Config{Threshold: 0.9, Context: "docs/ holds documentation"},
 		},
 		{
 			name:    "block scalar context",
 			content: "context: |\n  infra/ holds production Terraform.\n\n  tools/ is developer only.\n",
-			want:    Config{Threshold: DefaultThreshold, Context: "infra/ holds production Terraform.\n\ntools/ is developer only.\n"},
+			want:    config.Config{Threshold: config.DefaultThreshold, Context: "infra/ holds production Terraform.\n\ntools/ is developer only.\n"},
 		},
 		{
 			name:    "empty context",
 			content: `context: ""` + "\n",
-			want:    Config{Threshold: DefaultThreshold, Context: ""},
+			want:    config.Config{Threshold: config.DefaultThreshold, Context: ""},
 		},
 	}
 
@@ -91,8 +92,8 @@ func TestLoadFile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := Load(Params{RepoRoot: repoWith(t, test.content)})
-			require.NoError(t, err, "Load, want %+v", test.want)
+			got, err := config.Load(config.Params{RepoRoot: repoWith(t, test.content)})
+			require.NoError(t, err, "config.Load, want %+v", test.want)
 			assert.Equal(t, test.want, got)
 		})
 	}
@@ -229,13 +230,13 @@ func TestLoadRejectsInvalidFile(t *testing.T) {
 
 			root := repoWith(t, test.content)
 
-			got, err := Load(Params{RepoRoot: root})
-			require.Error(t, err, "Load = %+v, want an error", got)
+			got, err := config.Load(config.Params{RepoRoot: root})
+			require.Error(t, err, "config.Load = %+v, want an error", got)
 			require.ErrorContains(t, err, test.want)
-			require.ErrorContains(t, err, filepath.Join(root, FileName), "the error must name the configuration file")
+			require.ErrorContains(t, err, filepath.Join(root, config.FileName), "the error must name the configuration file")
 
-			_, err = Load(Params{RepoRoot: root, Threshold: 0.99, ThresholdSet: true})
-			assert.Error(t, err, "Load with --threshold accepted an invalid configuration file")
+			_, err = config.Load(config.Params{RepoRoot: root, Threshold: 0.99, ThresholdSet: true})
+			assert.Error(t, err, "config.Load with --threshold accepted an invalid configuration file")
 		})
 	}
 }
@@ -252,7 +253,7 @@ func TestLoadPrecedence(t *testing.T) {
 	}{
 		{
 			name: "no file and no override",
-			want: DefaultThreshold,
+			want: config.DefaultThreshold,
 		},
 		{
 			name:    "file without an override",
@@ -305,13 +306,13 @@ func TestLoadPrecedence(t *testing.T) {
 				root = repoWith(t, test.content)
 			}
 
-			got, err := Load(Params{
+			got, err := config.Load(config.Params{
 				RepoRoot:     root,
 				Threshold:    test.threshold,
 				ThresholdSet: test.thresholdSet,
 			})
 			require.NoError(t, err)
-			assert.Equal(t, Config{Threshold: test.want}, got)
+			assert.Equal(t, config.Config{Threshold: test.want}, got)
 		})
 	}
 }
@@ -320,8 +321,8 @@ func TestLoadRejectsInvalidOverride(t *testing.T) {
 	t.Parallel()
 
 	for _, threshold := range []float64{-0.1, 1.1, math.NaN(), math.Inf(1), math.Inf(-1)} {
-		got, err := Load(Params{RepoRoot: repoWith(t), Threshold: threshold, ThresholdSet: true})
-		assert.Error(t, err, "Load with --threshold %v = %+v, want an error", threshold, got)
+		got, err := config.Load(config.Params{RepoRoot: repoWith(t), Threshold: threshold, ThresholdSet: true})
+		assert.Error(t, err, "config.Load with --threshold %v = %+v, want an error", threshold, got)
 	}
 }
 
@@ -331,25 +332,25 @@ func TestLoadDiscoversOnlyTheRepositoryRoot(t *testing.T) {
 	root := repoWith(t, "threshold: 0.8\ncontext: root configuration\n")
 	sub := filepath.Join(root, "internal", "cli")
 	require.NoError(t, os.MkdirAll(sub, 0o755), "creating %s", sub)
-	write(t, filepath.Join(sub, FileName), "threshold: 0.1\n")
+	write(t, filepath.Join(sub, config.FileName), "threshold: 0.1\n")
 
-	got, err := Load(Params{RepoRoot: root, Cwd: sub})
+	got, err := config.Load(config.Params{RepoRoot: root, Cwd: sub})
 	require.NoError(t, err)
-	assert.Equal(t, Config{Threshold: 0.8, Context: "root configuration"}, got, "Load from a subdirectory")
+	assert.Equal(t, config.Config{Threshold: 0.8, Context: "root configuration"}, got, "config.Load from a subdirectory")
 }
 
 func TestLoadRelativePathWithoutAWorkingDirectory(t *testing.T) {
 	t.Parallel()
 
-	got, err := Load(Params{RepoRoot: repoWith(t), Path: "custom.yml"})
-	assert.Error(t, err, "Load of a relative path without a working directory = %+v, want an error", got)
+	got, err := config.Load(config.Params{RepoRoot: repoWith(t), Path: "custom.yml"})
+	assert.Error(t, err, "config.Load of a relative path without a working directory = %+v, want an error", got)
 }
 
 func TestLoadWithoutARepositoryRoot(t *testing.T) {
 	t.Parallel()
 
-	got, err := Load(Params{})
-	assert.Error(t, err, "Load without a repository root = %+v, want an error", got)
+	got, err := config.Load(config.Params{})
+	assert.Error(t, err, "config.Load without a repository root = %+v, want an error", got)
 }
 
 func TestLoadExplicitPath(t *testing.T) {
@@ -360,12 +361,12 @@ func TestLoadExplicitPath(t *testing.T) {
 	require.NoError(t, os.MkdirAll(cwd, 0o755), "creating %s", cwd)
 	write(t, filepath.Join(cwd, "custom.yml"), "threshold: 0.6\ncontext: explicit\n")
 
-	want := Config{Threshold: 0.6, Context: "explicit"}
+	want := config.Config{Threshold: 0.6, Context: "explicit"}
 
 	t.Run("relative to the working directory", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "custom.yml"})
+		got, err := config.Load(config.Params{RepoRoot: root, Cwd: cwd, Path: "custom.yml"})
 		require.NoError(t, err)
 		assert.Equal(t, want, got)
 	})
@@ -373,7 +374,7 @@ func TestLoadExplicitPath(t *testing.T) {
 	t.Run("absolute", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := Load(Params{RepoRoot: root, Cwd: root, Path: filepath.Join(cwd, "custom.yml")})
+		got, err := config.Load(config.Params{RepoRoot: root, Cwd: root, Path: filepath.Join(cwd, "custom.yml")})
 		require.NoError(t, err)
 		assert.Equal(t, want, got)
 	})
@@ -381,8 +382,8 @@ func TestLoadExplicitPath(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "absent.yml"})
-		require.Error(t, err, "Load with a missing --config = %+v, want an error", got)
+		got, err := config.Load(config.Params{RepoRoot: root, Cwd: cwd, Path: "absent.yml"})
+		require.Error(t, err, "config.Load with a missing --config = %+v, want an error", got)
 		require.ErrorContains(t, err, "absent.yml", "the error must name the missing file")
 	})
 
@@ -391,8 +392,8 @@ func TestLoadExplicitPath(t *testing.T) {
 
 		write(t, filepath.Join(cwd, "broken.yml"), "safe_paths: [docs]\n")
 
-		got, err := Load(Params{RepoRoot: root, Cwd: cwd, Path: "broken.yml"})
-		require.Error(t, err, "Load with an invalid --config = %+v, want an error", got)
+		got, err := config.Load(config.Params{RepoRoot: root, Cwd: cwd, Path: "broken.yml"})
+		require.Error(t, err, "config.Load with an invalid --config = %+v, want an error", got)
 	})
 }
 
@@ -404,18 +405,18 @@ func TestLoadUnreadableFile(t *testing.T) {
 	}
 
 	root := repoWith(t, "threshold: 0.8\n")
-	require.NoError(t, os.Chmod(filepath.Join(root, FileName), 0o000), "chmod")
+	require.NoError(t, os.Chmod(filepath.Join(root, config.FileName), 0o000), "chmod")
 
-	got, err := Load(Params{RepoRoot: root})
-	require.Error(t, err, "Load of an unreadable configuration = %+v, want an error", got)
+	got, err := config.Load(config.Params{RepoRoot: root})
+	require.Error(t, err, "config.Load of an unreadable configuration = %+v, want an error", got)
 }
 
 func TestLoadOversizedFile(t *testing.T) {
 	t.Parallel()
 
-	root := repoWith(t, "context: |\n  "+strings.Repeat("a", maxFileSize)+"\n")
+	root := repoWith(t, "context: |\n  "+strings.Repeat("a", 1<<20)+"\n")
 
-	got, err := Load(Params{RepoRoot: root})
-	require.Error(t, err, "Load of an oversized configuration = %+v, want an error", got)
+	got, err := config.Load(config.Params{RepoRoot: root})
+	require.Error(t, err, "config.Load of an oversized configuration = %+v, want an error", got)
 	require.ErrorContains(t, err, "larger than", "the error must explain the size limit")
 }

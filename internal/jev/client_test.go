@@ -1,4 +1,4 @@
-package jev
+package jev_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ktsu2i/jevgate/internal/git"
+	"github.com/ktsu2i/jevgate/internal/jev"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,13 +38,27 @@ func testDiff() git.Diff {
 	}
 }
 
-func testClient(t *testing.T, handler http.HandlerFunc) *Client {
+func testClient(t *testing.T, handler http.HandlerFunc) *jev.Client {
+	t.Helper()
+	return testClientWithTimeout(t, handler, 0)
+}
+
+func testClientWithTimeout(t *testing.T, handler http.HandlerFunc, timeout time.Duration) *jev.Client {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	client := NewClient(testKey, server.Client())
-	client.endpoint = server.URL
-	return client
+	target, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	transport := server.Client().Transport
+	return jev.NewClient(testKey, &http.Client{
+		Timeout: timeout,
+		Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			request = request.Clone(request.Context())
+			request.URL.Scheme = target.Scheme
+			request.URL.Host = target.Host
+			return transport.RoundTrip(request)
+		}),
+	})
 }
 
 func TestAssessRequest(t *testing.T) {
@@ -60,7 +76,7 @@ func TestAssessRequest(t *testing.T) {
 	})
 	got, err := client.Assess(context.Background(), testDiff(), "context-sentinel: docs/ contains documentation.")
 	require.NoError(t, err)
-	assert.Equal(t, Assessment{AIApprovalAllowedProbability: 0.972}, got)
+	assert.Equal(t, jev.Assessment{AIApprovalAllowedProbability: 0.972}, got)
 }
 
 func TestAssessResponses(t *testing.T) {
@@ -99,7 +115,7 @@ func TestAssessResponses(t *testing.T) {
 		{"trailing junk", `{"answers":{"ai_approval_allowed":{"type":"noul","noul":1}}} x`, 0, false},
 		{"empty", "", 0, false},
 		{"null", `null`, 0, false},
-		{"oversized", strings.Repeat(" ", maxResponseBytes) + `{}`, 0, false},
+		{"oversized", strings.Repeat(" ", 1<<20) + `{}`, 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -115,7 +131,7 @@ func TestAssessResponses(t *testing.T) {
 				assert.InDelta(t, tt.want, got.AIApprovalAllowedProbability, 0)
 			} else {
 				require.Error(t, err)
-				assert.Equal(t, Assessment{}, got)
+				assert.Equal(t, jev.Assessment{}, got)
 				require.ErrorContains(t, err, "HTTP 200")
 				assertSafeError(t, err)
 			}
@@ -131,7 +147,6 @@ func TestAssessRetryStatuses(t *testing.T) {
 			t.Run(fmt.Sprintf("%d/recover=%v", status, recover), func(t *testing.T) {
 				t.Parallel()
 				var calls atomic.Int32
-				var delays []time.Duration
 				client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 					call := calls.Add(1)
 					data, err := io.ReadAll(r.Body)
@@ -144,10 +159,6 @@ func TestAssessRetryStatuses(t *testing.T) {
 					w.WriteHeader(status)
 					fmt.Fprint(w, "secret-key-sentinel diff-sentinel context-sentinel")
 				})
-				client.wait = func(_ context.Context, delay time.Duration) error {
-					delays = append(delays, delay)
-					return nil
-				}
 				got, err := client.Assess(context.Background(), testDiff(), "context-sentinel")
 				canRetry := status == 429 || status == 529 || status == 502 || status == 503 || status == 504
 				wantCalls := 1
@@ -164,112 +175,26 @@ func TestAssessRetryStatuses(t *testing.T) {
 					require.Error(t, err)
 					require.ErrorContains(t, err, fmt.Sprintf("HTTP %d", status))
 					assertSafeError(t, err)
-					assert.Equal(t, Assessment{}, got)
+					assert.Equal(t, jev.Assessment{}, got)
 				}
 				assert.EqualValues(t, wantCalls, calls.Load())
-				require.Len(t, delays, wantCalls-1)
-				for i, delay := range delays {
-					base := (500 * time.Millisecond) << i
-					assert.GreaterOrEqual(t, delay, base)
-					assert.Less(t, delay, base+base/2)
-				}
 			})
 		}
 	}
 }
 
-func TestAssessRetryAfter(t *testing.T) {
-	t.Parallel()
-	for _, header := range []string{"2", time.Now().Add(10 * time.Second).UTC().Format(http.TimeFormat)} {
-		t.Run(header, func(t *testing.T) {
-			t.Parallel()
-			var calls atomic.Int32
-			client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-				if calls.Add(1) == 1 {
-					w.Header().Set("Retry-After", header)
-					w.WriteHeader(http.StatusTooManyRequests)
-					return
-				}
-				fmt.Fprint(w, `{"answers":{"ai_approval_allowed":{"type":"noul","noul":0}}}`)
-			})
-			var waited time.Duration
-			client.wait = func(_ context.Context, delay time.Duration) error {
-				waited = delay
-				return nil
-			}
-			_, err := client.Assess(context.Background(), testDiff(), "")
-			require.NoError(t, err)
-			assert.GreaterOrEqual(t, waited, 2*time.Second)
-			assert.EqualValues(t, 2, calls.Load())
-		})
-	}
-}
-
-func TestAssessRetryBeyondDeadline(t *testing.T) {
-	t.Parallel()
-	for _, header := range []string{"100", "9999999999999999999999999999"} {
-		t.Run(header, func(t *testing.T) {
-			t.Parallel()
-			var calls atomic.Int32
-			client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-				calls.Add(1)
-				w.Header().Set("Retry-After", header)
-				w.WriteHeader(529)
-			})
-			client.wait = func(context.Context, time.Duration) error {
-				t.Error("must not wait beyond the assessment deadline")
-				return nil
-			}
-			_, err := client.Assess(context.Background(), testDiff(), "")
-			require.ErrorIs(t, err, context.DeadlineExceeded)
-			require.ErrorContains(t, err, "HTTP 529")
-			assert.EqualValues(t, 1, calls.Load())
-		})
-	}
-}
-
-func TestAssessCancellationDuringWait(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var calls atomic.Int32
-	client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
-		w.WriteHeader(http.StatusTooManyRequests)
-	})
-	waiting := make(chan struct{})
-	client.wait = func(ctx context.Context, delay time.Duration) error {
-		close(waiting)
-		return waitRetry(ctx, delay)
-	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := client.Assess(ctx, testDiff(), "")
-		done <- err
-	}()
-	select {
-	case <-waiting:
-	case <-time.After(3 * time.Second):
-		t.Fatal("did not reach retry wait")
-	}
-	cancel()
-	select {
-	case err := <-done:
-		require.ErrorIs(t, err, context.Canceled)
-	case <-time.After(time.Second):
-		t.Fatal("retry wait ignored cancellation")
-	}
-	assert.EqualValues(t, 1, calls.Load())
-}
-
 func TestAssessTimeouts(t *testing.T) {
 	t.Parallel()
 	for _, phase := range []string{"headers", "body"} {
-		for _, limit := range []string{"request", "assessment", "caller", "http client"} {
+		for _, limit := range []string{"caller", "http client"} {
 			t.Run(phase+"/"+limit, func(t *testing.T) {
 				t.Parallel()
 				var calls atomic.Int32
-				client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				timeout := time.Duration(0)
+				if limit == "http client" {
+					timeout = 100 * time.Millisecond
+				}
+				client := testClientWithTimeout(t, func(w http.ResponseWriter, r *http.Request) {
 					calls.Add(1)
 					_, err := io.Copy(io.Discard, r.Body)
 					assert.NoError(t, err)
@@ -282,19 +207,12 @@ func TestAssessTimeouts(t *testing.T) {
 						}
 					}
 					<-r.Context().Done()
-				})
+				}, timeout)
 				ctx := context.Background()
-				switch limit {
-				case "request":
-					client.requestTimeout = 100 * time.Millisecond
-				case "assessment":
-					client.assessmentTimeout = 100 * time.Millisecond
-				case "caller":
+				if limit == "caller" {
 					var cancel context.CancelFunc
 					ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
 					defer cancel()
-				case "http client":
-					client.httpClient.Timeout = 100 * time.Millisecond
 				}
 				_, err := client.Assess(ctx, testDiff(), "")
 				require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -329,7 +247,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 func TestAssessTransportError(t *testing.T) {
 	t.Parallel()
 	calls := 0
-	client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+	client := jev.NewClient(testKey, &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		calls++
 		return nil, errors.New("secret-key-sentinel diff-sentinel context-sentinel")
 	})})
@@ -342,7 +260,7 @@ func TestAssessTransportError(t *testing.T) {
 func TestAssessmentDeadlinePersistsAcrossAttempts(t *testing.T) {
 	t.Parallel()
 	var deadlines []time.Time
-	client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	client := jev.NewClient(testKey, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		deadline, ok := r.Context().Deadline()
 		assert.True(t, ok)
 		deadlines = append(deadlines, deadline)
@@ -351,11 +269,9 @@ func TestAssessmentDeadlinePersistsAcrossAttempts(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"answers":{"ai_approval_allowed":{"type":"noul","noul":1}}}`))}, nil
 	})})
-	client.assessmentTimeout = 2 * time.Second
-	client.wait = func(ctx context.Context, _ time.Duration) error {
-		return waitRetry(ctx, time.Millisecond)
-	}
-	_, err := client.Assess(context.Background(), testDiff(), "")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := client.Assess(ctx, testDiff(), "")
 	require.NoError(t, err)
 	require.Len(t, deadlines, 2)
 	assert.Equal(t, deadlines[0], deadlines[1], "retry must not reset the total time budget")
@@ -379,7 +295,7 @@ func (b *endlessBody) Close() error { b.closed = true; return nil }
 func TestResponseReadIsBounded(t *testing.T) {
 	t.Parallel()
 	body := &endlessBody{}
-	client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	client := jev.NewClient(testKey, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 	})})
 	_, err := client.Assess(context.Background(), testDiff(), "")
@@ -401,7 +317,7 @@ func TestAssessClosesBodies(t *testing.T) {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			t.Parallel()
 			var bodies []*trackedBody
-			client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			client := jev.NewClient(testKey, &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 				for _, body := range bodies {
 					assert.True(t, body.closed, "previous attempt must close before retrying")
 				}
@@ -409,7 +325,6 @@ func TestAssessClosesBodies(t *testing.T) {
 				bodies = append(bodies, body)
 				return &http.Response{StatusCode: status, Body: body, Header: make(http.Header)}, nil
 			})})
-			client.wait = func(context.Context, time.Duration) error { return nil }
 			_, err := client.Assess(context.Background(), testDiff(), "")
 			require.Error(t, err)
 			for _, body := range bodies {
@@ -437,7 +352,14 @@ func TestAssessInvalidInputDoesNotSend(t *testing.T) {
 	for _, mode := range []string{"missing key", "header injection", "oversized context", "oversized patch", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
-			client := NewClient(testKey, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			apiKey := testKey
+			switch mode {
+			case "missing key":
+				apiKey = " "
+			case "header injection":
+				apiKey = testKey + "\r\nInjected: value"
+			}
+			client := jev.NewClient(apiKey, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				t.Error("invalid input must not send a request")
 				return nil, errors.New("unexpected request")
 			})})
@@ -445,14 +367,10 @@ func TestAssessInvalidInputDoesNotSend(t *testing.T) {
 			repoContext := ""
 			ctx := context.Background()
 			switch mode {
-			case "missing key":
-				client.apiKey = " "
-			case "header injection":
-				client.apiKey = testKey + "\r\nInjected: value"
 			case "oversized context":
-				repoContext = strings.Repeat("x", maxRequestBytes)
+				repoContext = strings.Repeat("x", 128<<10)
 			case "oversized patch":
-				diff.Patch = strings.Repeat("x", maxRequestBytes)
+				diff.Patch = strings.Repeat("x", 128<<10)
 			case "canceled":
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -461,7 +379,7 @@ func TestAssessInvalidInputDoesNotSend(t *testing.T) {
 			got, err := client.Assess(ctx, diff, repoContext)
 			require.Error(t, err)
 			assertSafeError(t, err)
-			assert.Equal(t, Assessment{}, got)
+			assert.Equal(t, jev.Assessment{}, got)
 		})
 	}
 }

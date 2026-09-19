@@ -1,4 +1,4 @@
-package output
+package output_test
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ktsu2i/jevgate/internal/gate"
+	"github.com/ktsu2i/jevgate/internal/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +37,7 @@ func TestWriteText(t *testing.T) {
 			t.Parallel()
 
 			var got bytes.Buffer
-			require.NoError(t, WriteText(&got, test.result))
+			require.NoError(t, output.WriteText(&got, test.result))
 			assert.Equal(t, test.want, got.String())
 		})
 	}
@@ -46,7 +47,7 @@ func TestWriteTextRejectsInvalidResultBeforeWriting(t *testing.T) {
 	t.Parallel()
 
 	writer := &recordingWriter{}
-	err := WriteText(writer, gate.Result{Confidence: math.NaN(), Threshold: 0.95})
+	err := output.WriteText(writer, gate.Result{Confidence: math.NaN(), Threshold: 0.95})
 	require.Error(t, err)
 	assert.Equal(t, 0, writer.calls)
 }
@@ -55,14 +56,14 @@ func TestWriteTextReturnsWriterError(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("write sentinel")
-	err := WriteText(errorWriter{err: want}, gate.Result{Confidence: 0.5, Threshold: 0.95})
+	err := output.WriteText(errorWriter{err: want}, gate.Result{Confidence: 0.5, Threshold: 0.95})
 	require.ErrorIs(t, err, want)
 }
 
 func TestWriteTextRejectsShortWrite(t *testing.T) {
 	t.Parallel()
 
-	err := WriteText(shortWriter{}, gate.Result{Confidence: 0.5, Threshold: 0.95})
+	err := output.WriteText(shortWriter{}, gate.Result{Confidence: 0.5, Threshold: 0.95})
 	require.ErrorIs(t, err, io.ErrShortWrite)
 }
 

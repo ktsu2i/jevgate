@@ -1,4 +1,4 @@
-package gate
+package gate_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/ktsu2i/jevgate/internal/gate"
 	"github.com/ktsu2i/jevgate/internal/git"
 	"github.com/ktsu2i/jevgate/internal/jev"
 	"github.com/stretchr/testify/assert"
@@ -57,9 +58,9 @@ func TestEvaluateDecision(t *testing.T) {
 			diff := git.Diff{BaseID: "base", HeadID: "head", Patch: "diff sentinel"}
 			assessor := &stubAssessor{assessment: jev.Assessment{AIApprovalAllowedProbability: test.confidence}}
 
-			got, err := Evaluate(ctx, assessor, diff, "repository sentinel", test.threshold)
+			got, err := gate.Evaluate(ctx, assessor, diff, "repository sentinel", test.threshold)
 			require.NoError(t, err)
-			assert.Equal(t, Result{
+			assert.Equal(t, gate.Result{
 				AIApprovalAllowed: test.allowed,
 				Confidence:        test.confidence,
 				Threshold:         test.threshold,
@@ -80,9 +81,9 @@ func TestEvaluateRejectsInvalidThresholdBeforeAssessment(t *testing.T) {
 			t.Parallel()
 
 			assessor := &stubAssessor{assessment: jev.Assessment{AIApprovalAllowedProbability: 1}}
-			got, err := Evaluate(context.Background(), assessor, git.Diff{}, "", threshold)
+			got, err := gate.Evaluate(context.Background(), assessor, git.Diff{}, "", threshold)
 			require.Error(t, err)
-			assert.Equal(t, Result{}, got)
+			assert.Equal(t, gate.Result{}, got)
 			assert.Equal(t, 0, assessor.calls)
 		})
 	}
@@ -96,9 +97,9 @@ func TestEvaluateRejectsInvalidAssessment(t *testing.T) {
 			t.Parallel()
 
 			assessor := &stubAssessor{assessment: jev.Assessment{AIApprovalAllowedProbability: confidence}}
-			got, err := Evaluate(context.Background(), assessor, git.Diff{}, "", 0.95)
+			got, err := gate.Evaluate(context.Background(), assessor, git.Diff{}, "", 0.95)
 			require.Error(t, err)
-			assert.Equal(t, Result{}, got)
+			assert.Equal(t, gate.Result{}, got)
 			assert.Equal(t, 1, assessor.calls)
 		})
 	}
@@ -110,16 +111,16 @@ func TestEvaluatePreservesAssessorError(t *testing.T) {
 	want := errors.New("assessment sentinel")
 	assessor := &stubAssessor{err: want}
 
-	got, err := Evaluate(context.Background(), assessor, git.Diff{}, "", 0.95)
+	got, err := gate.Evaluate(context.Background(), assessor, git.Diff{}, "", 0.95)
 	require.ErrorIs(t, err, want)
-	assert.Equal(t, Result{}, got)
+	assert.Equal(t, gate.Result{}, got)
 	assert.Equal(t, 1, assessor.calls)
 }
 
 func TestEvaluateRequiresAssessor(t *testing.T) {
 	t.Parallel()
 
-	got, err := Evaluate(context.Background(), nil, git.Diff{}, "", 0.95)
+	got, err := gate.Evaluate(context.Background(), nil, git.Diff{}, "", 0.95)
 	require.Error(t, err)
-	assert.Equal(t, Result{}, got)
+	assert.Equal(t, gate.Result{}, got)
 }
