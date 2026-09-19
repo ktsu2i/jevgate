@@ -78,21 +78,34 @@ func TestRunHelpAndVersionNeedNoRepositoryOrAPIKey(t *testing.T) {
 	}
 }
 
-func TestRunEvaluationIsNotImplemented(t *testing.T) {
+func TestRunRejectsInvalidInputBeforeUsingRuntimeDependencies(t *testing.T) {
 	t.Parallel()
 
-	for _, args := range [][]string{
-		{"main", "HEAD"},
-		{"--base", "main", "--head", "HEAD"},
-		{"main", "HEAD", "--format", "json"},
-		{"--", "--help"},
-	} {
-		code, stdout, stderr := runCLI(t, args...)
-		assert.Equal(t, cli.ExitError, code, "cli.Run(%q) (stdout: %q)", args, stdout)
-		assert.Empty(t, stdout, "cli.Run(%q) wrote to stdout", args)
-		assert.Contains(t, stderr, "not implemented", "cli.Run(%q) stderr, want a diagnostic about the unimplemented path", args)
-		assert.NotContains(t, stderr, "ALLOW", "cli.Run(%q) stderr reports a decision", args)
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"--", "--help"}, want: "exactly 2 revisions"},
+		{args: []string{"main"}, want: "exactly 2 revisions"},
+		{args: []string{"main", "HEAD", "--format", "yaml"}, want: "not supported"},
+		{args: []string{"main..HEAD", "HEAD"}, want: "revision range"},
 	}
+	for _, test := range tests {
+		code, stdout, stderr := runCLI(t, test.args...)
+		assert.Equal(t, cli.ExitError, code, "cli.Run(%q) (stdout: %q)", test.args, stdout)
+		assert.Empty(t, stdout, "cli.Run(%q) wrote to stdout", test.args)
+		assert.Contains(t, stderr, test.want, "cli.Run(%q) stderr", test.args)
+		assert.NotContains(t, stderr, "ALLOW", "cli.Run(%q) stderr reports a decision", test.args)
+	}
+}
+
+func TestRunHelpAfterTerminatorIsARevision(t *testing.T) {
+	t.Parallel()
+
+	code, stdout, stderr := runCLI(t, "--", "--help")
+	assert.Equal(t, cli.ExitError, code, "cli.Run() (stdout: %q)", stdout)
+	assert.Empty(t, stdout, "cli.Run() wrote to stdout")
+	assert.Contains(t, stderr, "exactly 2 revisions")
 }
 
 func TestRunWithoutArguments(t *testing.T) {
@@ -101,5 +114,5 @@ func TestRunWithoutArguments(t *testing.T) {
 	code, stdout, stderr := runCLI(t)
 	assert.Equal(t, cli.ExitError, code, "cli.Run() (stdout: %q)", stdout)
 	assert.Empty(t, stdout, "cli.Run() wrote to stdout")
-	assert.Contains(t, stderr, "required", "cli.Run() stderr, want a diagnostic about the missing revisions")
+	assert.Contains(t, stderr, "exactly 2 revisions", "cli.Run() stderr, want a diagnostic about the missing revisions")
 }

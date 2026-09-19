@@ -5,7 +5,15 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
+
+	"github.com/ktsu2i/jevgate/internal/config"
+	"github.com/ktsu2i/jevgate/internal/gate"
+	"github.com/ktsu2i/jevgate/internal/git"
+	"github.com/ktsu2i/jevgate/internal/output"
 )
+
+const apiKeyEnvironment = "JEV_API_KEY" //nolint:gosec // This is an environment variable name, not a credential.
 
 const (
 	// ExitAllow indicates that AI approval is allowed.
@@ -52,27 +60,96 @@ Exit codes:
 
 // Run executes the command line interface and returns the process exit code.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	return run(ctx, args, stdout, stderr)
+	return run(ctx, args, stdout, stderr, productionDependencies())
 }
 
-func run(ctx context.Context, args []string, stdout, stderr io.Writer) int { //nolint:revive,unparam // ctx is used once Jev is wired up.
+func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps dependencies) int {
 	switch {
 	case hasFlag(args, "-h", "--help"):
-		fmt.Fprint(stdout, helpText)
-		return ExitAllow
+		return writeInformation(stdout, stderr, helpText)
 	case hasFlag(args, "--version"):
-		fmt.Fprintf(stdout, "jevgate %s\n", version)
+		return writeInformation(stdout, stderr, fmt.Sprintf("jevgate %s\n", version))
+	}
+
+	opts, err := ParseOptions(args)
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	cwd, err := deps.getwd()
+	if err != nil {
+		return fail(stderr, fmt.Errorf("get working directory: %w", err))
+	}
+	repository, err := git.Discover(ctx, cwd)
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	configuration, err := config.Load(config.Params{
+		RepoRoot:     repository.Root(),
+		Cwd:          cwd,
+		Path:         opts.ConfigPath,
+		Threshold:    opts.Threshold,
+		ThresholdSet: opts.ThresholdSet,
+	})
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	baseID, err := repository.ResolveCommit(ctx, opts.Base)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	headID, err := repository.ResolveCommit(ctx, opts.Head)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	diff, err := repository.Collect(ctx, baseID, headID)
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	apiKey, found := deps.lookupEnv(apiKeyEnvironment)
+	if !found || strings.TrimSpace(apiKey) == "" || strings.ContainsAny(apiKey, "\r\n") {
+		return fail(stderr, fmt.Errorf("%s is not set or is empty; set it to your Jev API key", apiKeyEnvironment))
+	}
+	assessor := deps.newAssessor(apiKey)
+	result, err := gate.Evaluate(ctx, assessor, diff, configuration.Context, configuration.Threshold)
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	switch opts.Format {
+	case FormatText:
+		err = output.WriteText(stdout, result)
+	case FormatJSON:
+		err = output.WriteJSON(stdout, result)
+	default:
+		panic("unreachable: ParseOptions validates the output format")
+	}
+	if err != nil {
+		return fail(stderr, fmt.Errorf("write output: %w", err))
+	}
+	if result.AIApprovalAllowed {
 		return ExitAllow
 	}
+	return ExitHumanReview
+}
 
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, "jevgate: <base> and <head> are required")
-		fmt.Fprintln(stderr, `jevgate: run "jevgate --help" for usage`)
-		return ExitError
+func writeInformation(stdout, stderr io.Writer, value string) int {
+	written, err := io.WriteString(stdout, value)
+	if err == nil && written != len(value) {
+		err = io.ErrShortWrite
 	}
+	if err != nil {
+		return fail(stderr, fmt.Errorf("write output: %w", err))
+	}
+	return ExitAllow
+}
 
-	// Never allow approval until evaluation is implemented.
-	fmt.Fprintln(stderr, "jevgate: evaluating a change is not implemented yet; no decision was made")
+func fail(stderr io.Writer, err error) int {
+	diagnostic := strings.NewReplacer("\r", " ", "\n", " ").Replace(err.Error())
+	_, _ = fmt.Fprintf(stderr, "jevgate: %s\n", diagnostic)
 	return ExitError
 }
 
