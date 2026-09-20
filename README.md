@@ -14,17 +14,46 @@ jevgate makes that decision; your reviewer still reviews the code. It does not s
 
 ## Quick start
 
-### 1. Install from source
+### 1. Install
 
-You need **Go 1.26 or later**, **Git**, and a **Jev API key**. Evaluation requires network access to the Jev API. Prebuilt release binaries are not yet available.
+Install jevgate with `go install` or Homebrew. You need **Git** and a **Jev API key** to use jevgate. Evaluation requires network access to the Jev API.
+
+#### Go
+
+Requires **Go 1.26 or later**. Once the repository is public, install with:
 
 ```sh
-git clone https://github.com/ktsu2i/jevgate.git
-cd jevgate
-go install ./cmd/jevgate
+go install github.com/ktsu2i/jevgate/cmd/jevgate@latest
 ```
 
-Go installs the executable in `GOBIN`, or `$(go env GOPATH)/bin` if `GOBIN` is unset. Make sure that directory is on your `PATH`, then check the installation:
+The repository is currently private. Until it is public, users with repository access need authenticated Git access and a matching `GOPRIVATE` setting. For example, if you do not already have a `GOPRIVATE` setting:
+
+```sh
+GOPRIVATE=github.com/ktsu2i/jevgate go install github.com/ktsu2i/jevgate/cmd/jevgate@latest
+```
+
+If you already use `GOPRIVATE`, add `github.com/ktsu2i/jevgate` to its comma-separated patterns instead of replacing them.
+
+Go installs the executable in `GOBIN`, or `$(go env GOPATH)/bin` if `GOBIN` is unset. Make sure that directory is on your `PATH`.
+
+#### Homebrew
+
+With [Homebrew](https://brew.sh/) installed, install the development version from the [dedicated tap](https://github.com/ktsu2i/homebrew-tap):
+
+```sh
+brew install --HEAD ktsu2i/tap/jevgate
+```
+
+There is no tagged release yet, so `--HEAD` builds from `main`. Homebrew installs the Go build dependency and Git. While the repository is private, Git must be authenticated with an account that can access it.
+
+To update the development version:
+
+```sh
+brew update
+brew upgrade --fetch-HEAD ktsu2i/tap/jevgate
+```
+
+After installation, check that the CLI starts:
 
 ```sh
 jevgate --help
@@ -146,7 +175,7 @@ It evaluates the complete change without truncating the diff or excluding files 
 
 | Problem | What to check |
 | --- | --- |
-| `jevgate: command not found` | Add Go's install directory (`GOBIN` or `$(go env GOPATH)/bin`) to `PATH`. |
+| `jevgate: command not found` | For Go installs, add `GOBIN` or `$(go env GOPATH)/bin` to `PATH`. For Homebrew, check that its `bin` directory is on `PATH`. |
 | `JEV_API_KEY is not set or is empty` | Export your API key in the shell or CI step that runs jevgate. |
 | `unusable revision` | Check the branch or commit name and fetch any missing history. |
 | `there is no change to evaluate` | Choose two commits with different contents; working tree edits are not included. |

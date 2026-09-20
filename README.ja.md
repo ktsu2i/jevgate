@@ -14,17 +14,46 @@ jevgate が担うのはこの判定までです。コードレビューはレビ
 
 ## クイックスタート
 
-### 1. ソースからインストールする
+### 1. インストールする
 
-**Go 1.26 以降**、**Git**、**Jev API キー**が必要です。評価時には Jev API へのネットワーク接続が必要です。ビルド済みのリリースバイナリはまだ配布していません。
+jevgate は `go install` または Homebrew でインストールできます。利用には **Git** と **Jev API キー**が必要です。評価時には Jev API へのネットワーク接続が必要です。
+
+#### Go
+
+**Go 1.26 以降**が必要です。リポジトリ公開後は、次のコマンドでインストールできます。
 
 ```sh
-git clone https://github.com/ktsu2i/jevgate.git
-cd jevgate
-go install ./cmd/jevgate
+go install github.com/ktsu2i/jevgate/cmd/jevgate@latest
 ```
 
-実行ファイルは `GOBIN` に、未設定の場合は `$(go env GOPATH)/bin` にインストールされます。そのディレクトリを `PATH` に追加し、起動できることを確認してください。
+現在、リポジトリは private です。公開までは、リポジトリへのアクセス権に加え、Git の認証設定と対応する `GOPRIVATE` の設定が必要です。`GOPRIVATE` をまだ設定していない場合の例：
+
+```sh
+GOPRIVATE=github.com/ktsu2i/jevgate go install github.com/ktsu2i/jevgate/cmd/jevgate@latest
+```
+
+すでに `GOPRIVATE` を利用している場合は、既存の設定を置き換えず、カンマ区切りのパターンに `github.com/ktsu2i/jevgate` を追加してください。
+
+実行ファイルは `GOBIN` に、未設定の場合は `$(go env GOPATH)/bin` にインストールされます。そのディレクトリを `PATH` に追加してください。
+
+#### Homebrew
+
+[Homebrew](https://brew.sh/) を用意し、[専用tap](https://github.com/ktsu2i/homebrew-tap)から開発版をインストールします。
+
+```sh
+brew install --HEAD ktsu2i/tap/jevgate
+```
+
+まだリリースタグがないため、`--HEAD` で `main` からビルドします。ビルドに必要な Go と、実行時に必要な Git は Homebrew がインストールします。リポジトリが private の間は、アクセス権のあるアカウントでの Git 認証が必要です。
+
+開発版を更新する場合：
+
+```sh
+brew update
+brew upgrade --fetch-HEAD ktsu2i/tap/jevgate
+```
+
+インストール後、CLI が起動することを確認してください。
 
 ```sh
 jevgate --help
@@ -146,7 +175,7 @@ jevgate は、差分、変更されたファイルのパスとメタデータ、
 
 | 問題 | 確認すること |
 | --- | --- |
-| `jevgate: command not found` | Go のインストール先（`GOBIN` または `$(go env GOPATH)/bin`）を `PATH` に追加してください。 |
+| `jevgate: command not found` | Go の場合は `GOBIN` または `$(go env GOPATH)/bin`、Homebrew の場合は Homebrew の `bin` ディレクトリが `PATH` に含まれているか確認してください。 |
 | `JEV_API_KEY is not set or is empty` | jevgate を実行するシェルや CI ステップで API キーを設定してください。 |
 | `unusable revision` | ブランチ名やコミットを確認し、不足する履歴を取得してください。 |
 | `there is no change to evaluate` | 内容の異なるコミットを指定してください。作業ツリーの編集は対象外です。 |
