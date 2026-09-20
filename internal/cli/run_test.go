@@ -23,6 +23,7 @@ import (
 const (
 	testAPIKey            = "test-api-key"
 	testAPIKeyEnvironment = "JEV_API_KEY"
+	versionOutputPattern  = `\Ajevgate \d+\.\d+\.\d+\n\z`
 )
 
 func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
@@ -79,7 +80,7 @@ func TestRunVersion(t *testing.T) {
 	code, stdout, stderr := runCLI(t, "--version")
 	assert.Equal(t, cli.ExitAllow, code, "cli.Run(--version) (stderr: %q)", stderr)
 	assert.Empty(t, stderr, "cli.Run(--version) wrote to stderr")
-	assert.Equal(t, "jevgate 0.0.0\n", stdout, "cli.Run(--version) stdout")
+	assert.Regexp(t, versionOutputPattern, stdout, "cli.Run(--version) stdout")
 }
 
 // Process-wide state prevents this test from running in parallel.
@@ -461,16 +462,21 @@ func TestBuiltBinaryInformationAndInputError(t *testing.T) {
 		args     []string
 		wantCode int
 		contains string
+		matches  string
 	}{
 		{name: "help", args: []string{"--help"}, wantCode: cli.ExitAllow, contains: "jevgate <base> <head>"},
-		{name: "version", args: []string{"--version"}, wantCode: cli.ExitAllow, contains: "jevgate 0.0.0\n"},
+		{name: "version", args: []string{"--version"}, wantCode: cli.ExitAllow, matches: versionOutputPattern},
 		{name: "input error", wantCode: cli.ExitError, contains: "exactly 2 revisions"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, code := runBinary(t, binary, test.args...)
 			assert.Equal(t, test.wantCode, code, got)
-			assert.Contains(t, got, test.contains)
+			if test.matches != "" {
+				assert.Regexp(t, test.matches, got)
+			} else {
+				assert.Contains(t, got, test.contains)
+			}
 		})
 	}
 }
