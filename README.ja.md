@@ -16,7 +16,40 @@ jevgate が担うのはこの判定までです。コードレビューはレビ
 
 ### 1. インストールする
 
-jevgate は `go install` または Homebrew でインストールできます。利用には **Git** と **Jev API キー**が必要です。評価時には Jev API へのネットワーク接続が必要です。
+jevgate はリリースアーカイブ、`go install`、または Homebrew でインストールできます。利用には **Git** と **Jev API キー**が必要です。評価時には Jev API へのネットワーク接続が必要です。
+
+#### リリースアーカイブ
+
+タグ付きリリースはまだ公開していません。[Releases ページ](https://github.com/ktsu2i/jevgate/releases)にリリースが存在し、後述の公開後検証を通過した後は、次の名前でビルド済みアーカイブを配布します。
+
+| OS | アーキテクチャ | アーカイブ |
+| --- | --- | --- |
+| Linux | `amd64`, `arm64` | `jevgate_<version>_linux_<arch>.tar.gz` |
+| macOS | `amd64`, `arm64` | `jevgate_<version>_darwin_<arch>.tar.gz` |
+| Windows | `amd64`, `arm64` | `jevgate_<version>_windows_<arch>.zip` |
+
+`<version>` はタグ先頭の `v` を含みません。各アーカイブには、`CGO_ENABLED=0` でビルドした `jevgate`（Windows は `jevgate.exe`）だけが入ります。同じリリースの `checksums.txt` をダウンロードし、展開前にアーカイブを検証してください。Linux または macOS では、次の `x.y.z`、OS、アーキテクチャを公開済みリリースと利用環境に置き換えます。
+
+```sh
+VERSION=x.y.z
+OS=darwin
+ARCH=arm64
+ASSET="jevgate_${VERSION}_${OS}_${ARCH}.tar.gz"
+BASE_URL="https://github.com/ktsu2i/jevgate/releases/download/v${VERSION}"
+
+curl -fLO "${BASE_URL}/${ASSET}"
+curl -fLO "${BASE_URL}/checksums.txt"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  grep "  ${ASSET}$" checksums.txt | sha256sum --check -
+else
+  grep "  ${ASSET}$" checksums.txt | shasum -a 256 --check -
+fi
+
+tar -xzf "${ASSET}"
+./jevgate --version
+./jevgate --help
+```
 
 #### Go
 
@@ -180,5 +213,22 @@ jevgate は、差分、変更されたファイルのパスとメタデータ、
 | `unusable revision` | ブランチ名やコミットを確認し、不足する履歴を取得してください。 |
 | `there is no change to evaluate` | 内容の異なるコミットを指定してください。作業ツリーの編集は対象外です。 |
 | 終了コード `2` | stderr で原因を確認してください。承認可否の判定は得られていません。 |
+
+## リリース手順
+
+`main` が更新されるたびに、tagpr が release pull request を作成・更新します。この pull request は `internal/cli/version.go` と `CHANGELOG.md` を更新します。内容を確認し、その version を公開するときだけマージしてください。minor または major version に上げる場合は、release pull request に `tagpr:minor` または `tagpr:major` ラベルを付けます。初回を `v0.1.0` にする場合は `tagpr:minor` を付けます。
+
+release pull request をマージすると、`.github/workflows/tagpr.yml` が version tag と draft GitHub Release を作成します。後続の `assets` job が GoReleaser を実行し、その draft を再利用して全対応 archive と `checksums.txt` を生成し、release を公開します。version tag を手動で作成・pushしないでください。`GITHUB_TOKEN` で作成した tag は別の tag 起点 workflow を発火しないため、同じ workflow 内でリリース処理を続けます。
+
+tagpr を利用するには、リポジトリ設定の **Allow GitHub Actions to create and approve pull requests** を有効にする必要があります。release pull request は、マージ前に通常の CI を通してください。release workflow は Jev API キーやレビュアーの認証情報を必要としません。
+
+公開せずに GoReleaser の出力をローカルで確認する場合：
+
+```sh
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+snapshot の生成先は Git から除外した `dist/` です。公開後は Releases ページに期待する asset があることを確認し、ダウンロードした archive を `checksums.txt` で検証します。`jevgate --version` と `jevgate --help` も確認してから、その version を公式 Workflow 例で利用してください。
 
 不具合の報告や機能の要望は [Issue](https://github.com/ktsu2i/jevgate/issues) にお寄せください。

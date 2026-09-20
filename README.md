@@ -16,7 +16,40 @@ jevgate makes that decision; your reviewer still reviews the code. It does not s
 
 ### 1. Install
 
-Install jevgate with `go install` or Homebrew. You need **Git** and a **Jev API key** to use jevgate. Evaluation requires network access to the Jev API.
+Install jevgate from a release archive, with `go install`, or with Homebrew. You need **Git** and a **Jev API key** to use jevgate. Evaluation requires network access to the Jev API.
+
+#### Release archive
+
+No tagged release has been published yet. After a release appears on the [Releases page](https://github.com/ktsu2i/jevgate/releases) and passes the post-release checks described below, prebuilt archives will use these names:
+
+| OS | Architectures | Archive |
+| --- | --- | --- |
+| Linux | `amd64`, `arm64` | `jevgate_<version>_linux_<arch>.tar.gz` |
+| macOS | `amd64`, `arm64` | `jevgate_<version>_darwin_<arch>.tar.gz` |
+| Windows | `amd64`, `arm64` | `jevgate_<version>_windows_<arch>.zip` |
+
+`<version>` omits the tag's leading `v`. Each archive contains only `jevgate` (`jevgate.exe` on Windows), built with `CGO_ENABLED=0`. Download `checksums.txt` from the same release and verify the archive before extracting it. For example, on Linux or macOS, replace `x.y.z`, the OS, and the architecture with a published release and your platform:
+
+```sh
+VERSION=x.y.z
+OS=darwin
+ARCH=arm64
+ASSET="jevgate_${VERSION}_${OS}_${ARCH}.tar.gz"
+BASE_URL="https://github.com/ktsu2i/jevgate/releases/download/v${VERSION}"
+
+curl -fLO "${BASE_URL}/${ASSET}"
+curl -fLO "${BASE_URL}/checksums.txt"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  grep "  ${ASSET}$" checksums.txt | sha256sum --check -
+else
+  grep "  ${ASSET}$" checksums.txt | shasum -a 256 --check -
+fi
+
+tar -xzf "${ASSET}"
+./jevgate --version
+./jevgate --help
+```
 
 #### Go
 
@@ -180,5 +213,22 @@ It evaluates the complete change without truncating the diff or excluding files 
 | `unusable revision` | Check the branch or commit name and fetch any missing history. |
 | `there is no change to evaluate` | Choose two commits with different contents; working tree edits are not included. |
 | Exit code `2` | Read stderr for the cause. No approval decision is available. |
+
+## Release process
+
+tagpr maintains a release pull request whenever `main` advances. The pull request updates `internal/cli/version.go` and `CHANGELOG.md`; review and merge it only when that version should be published. Apply the `tagpr:minor` or `tagpr:major` label to select a larger version bump. For the first `v0.1.0` release, apply `tagpr:minor` to the release pull request.
+
+After the release pull request is merged, `.github/workflows/tagpr.yml` creates the version tag and a draft GitHub Release. Its dependent `assets` job runs GoReleaser, reuses that draft, builds all supported archives, generates `checksums.txt`, and publishes the release. Do not create or push the version tag manually. This same-workflow design is required because a tag created with `GITHUB_TOKEN` does not start a separate tag-triggered workflow.
+
+The repository setting **Allow GitHub Actions to create and approve pull requests** must be enabled for tagpr. The release pull request must pass the normal CI checks before it is merged. The release workflow requires no Jev API key or reviewer credentials.
+
+To inspect the GoReleaser output locally without publishing a release:
+
+```sh
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+Snapshot files are written to `dist/`, which is reserved for generated output and ignored by Git. After publication, confirm the expected assets on the Releases page, verify the downloaded archive against `checksums.txt`, and check `jevgate --version` and `jevgate --help` before using that version in an official workflow example.
 
 For bugs and feature requests, [open an issue](https://github.com/ktsu2i/jevgate/issues).

@@ -79,7 +79,7 @@ func TestRunVersion(t *testing.T) {
 	code, stdout, stderr := runCLI(t, "--version")
 	assert.Equal(t, cli.ExitAllow, code, "cli.Run(--version) (stderr: %q)", stderr)
 	assert.Empty(t, stderr, "cli.Run(--version) wrote to stderr")
-	assert.Equal(t, "jevgate dev\n", stdout, "cli.Run(--version) stdout")
+	assert.Equal(t, "jevgate 0.0.0\n", stdout, "cli.Run(--version) stdout")
 }
 
 // Process-wide state prevents this test from running in parallel.
@@ -463,7 +463,7 @@ func TestBuiltBinaryInformationAndInputError(t *testing.T) {
 		contains string
 	}{
 		{name: "help", args: []string{"--help"}, wantCode: cli.ExitAllow, contains: "jevgate <base> <head>"},
-		{name: "version", args: []string{"--version"}, wantCode: cli.ExitAllow, contains: "jevgate dev\n"},
+		{name: "version", args: []string{"--version"}, wantCode: cli.ExitAllow, contains: "jevgate 0.0.0\n"},
 		{name: "input error", wantCode: cli.ExitError, contains: "exactly 2 revisions"},
 	}
 	for _, test := range tests {

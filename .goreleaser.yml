@@ -1,0 +1,44 @@
+version: 2
+
+project_name: jevgate
+
+builds:
+  - id: jevgate
+    main: ./cmd/jevgate
+    binary: jevgate
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/ktsu2i/jevgate/internal/cli.version={{ .Version }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - ids:
+      - jevgate
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: jevgate_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - none*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Version }}-snapshot-{{ .ShortCommit }}"
+
+release:
+  use_existing_draft: true

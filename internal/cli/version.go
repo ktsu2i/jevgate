@@ -1,4 +1,4 @@
 package cli
 
-// Release builds override version through -ldflags.
-var version = "dev"
+// tagpr updates version, and GoReleaser overrides it through -ldflags.
+var version = "0.0.0"
